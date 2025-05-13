@@ -1,3 +1,8 @@
+/**
+ * This import must be the first import in the file.
+ */
+import 'src/utils/safeExecutionExtensions';
+
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { ExpressAdapter } from '@nestjs/platform-express';
