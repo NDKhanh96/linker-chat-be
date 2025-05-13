@@ -10,6 +10,17 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "paths": {
+      "~utils/*": [
+        "src/utils/*"
+      ],
+      "~/*": [
+        "src/*"
+      ],
+      "~root/*": [
+        "./*"
+      ],
+    },
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,
