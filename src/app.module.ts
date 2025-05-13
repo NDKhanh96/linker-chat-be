@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 
-import { ConfigServiceModule } from '~utils/configs';
+import { ConfigServiceModule, DatabaseConfigModule } from '~utils/configs';
 
 @Module({
     /**
      * ConfigServiceModule phải ở trên cùng để load .env file trước
      */
-    imports: [ConfigServiceModule],
+    imports: [ConfigServiceModule, DatabaseConfigModule],
     controllers: [],
     providers: [],
 })
