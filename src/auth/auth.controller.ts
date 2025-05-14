@@ -1,17 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Controller, Delete, Get, Param } from '@nestjs/common';
 
 import { AuthService } from '~/auth/auth.service';
-import { CreateAuthDto } from '~/auth/dto/create-auth.dto';
-import { UpdateAuthDto } from '~/auth/dto/update-auth.dto';
 
 @Controller('auth')
 export class AuthController {
     constructor(private readonly authService: AuthService) {}
-
-    @Post()
-    create(@Body() createAuthDto: CreateAuthDto) {
-        return this.authService.create(createAuthDto);
-    }
 
     @Get()
     findAll() {
@@ -21,11 +14,6 @@ export class AuthController {
     @Get(':id')
     findOne(@Param('id') id: string) {
         return this.authService.findOne(+id);
-    }
-
-    @Patch(':id')
-    update(@Param('id') id: string, @Body() updateAuthDto: UpdateAuthDto) {
-        return this.authService.update(+id, updateAuthDto);
     }
 
     @Delete(':id')
