@@ -40,7 +40,7 @@ export default tseslint.config(
       'no-obj-calls': 'error',
       'no-sparse-arrays': 'error',
       'no-unreachable': 'error',
-      'no-unused-vars': ['error', { args: 'none' }],
+      'no-unused-vars': ['error', { args: '^_' }],
       'valid-typeof': 'warn',
       curly: 'error',
       eqeqeq: 'warn',
