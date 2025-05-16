@@ -1,35 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { IsNumber } from 'class-validator';
 
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { CreateAccountDto } from '~/auth/dto/create-account.dto';
+import type { Account } from '~/auth/entities';
 
-export class CreateUserDto {
+export class CreateUserDto extends CreateAccountDto {
     @ApiProperty()
-    @IsOptional()
-    @IsString()
-    firstName: string = '';
-
-    @ApiProperty()
-    @IsOptional()
-    @IsString()
-    lastName: string = '';
-
-    @ApiProperty()
-    @IsOptional()
-    @IsString()
-    avatar: string = '';
-
-    @ApiProperty()
-    @IsEmail()
-    @IsNotEmpty()
-    email: string;
-
-    @ApiProperty()
-    @IsString()
-    @MinLength(6)
-    password: string;
-
-    @ApiProperty()
-    @IsString()
-    @MinLength(6)
-    confirmPassword: string;
+    @IsNumber()
+    account: Account;
 }

@@ -1,6 +1,6 @@
 import { Column, Entity, JoinColumn, OneToOne, PrimaryColumn } from 'typeorm';
 
-import { User } from '~/user/entities';
+import { Account } from '~/auth/entities';
 
 @Entity('verify_tokens')
 export class VerifyToken {
@@ -11,10 +11,10 @@ export class VerifyToken {
     forgotPasswordSecret: string;
 
     @Column({ default: '' })
-    mailMFASecret: string;
+    mailMfaSecret: string;
 
     @Column({ default: '' })
-    appMFASecret: string;
+    appMfaSecret: string;
 
     @Column()
     userId: number;
@@ -22,9 +22,12 @@ export class VerifyToken {
     @Column()
     userEmail: string;
 
-    @OneToOne(() => User, user => user.verifyToken)
+    /**
+     * onDelete: 'CASCADE' để khi account bị xoá → verifyToken cũng xoá
+     */
+    @OneToOne(() => Account, account => account.verifyToken, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'id' })
-    user: User;
+    account: Account;
 
     constructor(partial: Partial<VerifyToken>) {
         Object.assign(this, partial);

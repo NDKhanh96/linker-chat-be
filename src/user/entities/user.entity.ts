@@ -1,61 +1,37 @@
-import { Exclude } from 'class-transformer';
-import { BeforeInsert, BeforeUpdate, Column, Entity, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Expose, Type } from 'class-transformer';
+import { Column, Entity, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
 
-import { RefreshToken, VerifyToken } from '~/auth/entities';
+import { Account } from '~/auth/entities';
 
+/**
+ * Account và User là liên hệ 1-1 với account là thực thể chính
+ */
 @Entity('users')
 export class User {
+    @Expose()
     @PrimaryGeneratedColumn()
     id: number;
 
+    @Expose()
     @Column()
     firstName: string;
 
+    @Expose()
     @Column()
     lastName: string;
 
+    @Expose()
     @Column()
     avatar: string;
 
-    @Column()
-    email: string;
-
-    @Column()
-    @Exclude()
-    password: string;
-
-    @Column({ default: false, type: 'boolean' })
-    enableAppMFA: boolean;
-
-    @Column({ default: true, type: 'boolean' })
-    isCredential: boolean;
-
     /**
-     * Khi xoá user thì cũng xoá luôn refresh token của user đó bằng onDelete: 'CASCADE'
-     * orphanedRowAction: 'delete' để xoá orphaned row (row không có liên kết với row nào khác)
-     * trong trường hợp refresh token không gắn với user nào (khó xảy ra trong trường hợp này)
+     * @Type để khi dùng plainToInstance lên User thì cũng sẽ có tác dụng lên class Account.
+     * Vì Account giữ khoá ngoại nên không cần @JoinColumn
      */
-    @OneToOne(() => RefreshToken, refreshToken => refreshToken.user, { cascade: true, onDelete: 'CASCADE', orphanedRowAction: 'delete' })
-    refreshToken: RefreshToken;
-
-    @OneToOne(() => VerifyToken, verifyToken => verifyToken.user, { cascade: true, onDelete: 'CASCADE', orphanedRowAction: 'delete' })
-    verifyToken: VerifyToken;
-
-    /**
-     * Cập nhật verifyToken và refreshToken khi cập nhật user
-     */
-    @BeforeInsert()
-    @BeforeUpdate()
-    syncVerifyToken(): void {
-        if (this.verifyToken) {
-            this.verifyToken.userEmail = this.email;
-            this.verifyToken.userId = this.id;
-        }
-
-        if (this.refreshToken) {
-            this.refreshToken.userId = this.id;
-        }
-    }
+    @Expose()
+    @Type(() => Account)
+    @OneToOne(() => Account, Account => Account.user)
+    account: Account;
 
     constructor(partial: Partial<User>) {
         Object.assign(this, partial);

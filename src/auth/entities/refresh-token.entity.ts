@@ -1,6 +1,6 @@
 import { Column, Entity, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
 
-import { User } from '~/user/entities';
+import { Account } from '~/auth/entities';
 
 @Entity('refresh_tokens')
 export class RefreshToken {
@@ -16,8 +16,11 @@ export class RefreshToken {
     @Column()
     expiresAt: Date;
 
-    @OneToOne(() => User, user => user.refreshToken)
-    user: User;
+    /**
+     * onDelete: 'CASCADE' để khi account bị xoá → refreshToken cũng xoá
+     */
+    @OneToOne(() => Account, account => account.refreshToken, { onDelete: 'CASCADE' })
+    account: Account;
 
     constructor(partial: Partial<RefreshToken>) {
         Object.assign(this, partial);
