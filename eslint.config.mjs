@@ -40,7 +40,13 @@ export default tseslint.config(
       'no-obj-calls': 'error',
       'no-sparse-arrays': 'error',
       'no-unreachable': 'error',
-      'no-unused-vars': ['error', { args: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+        },
+      ],
       'valid-typeof': 'warn',
       curly: 'error',
       eqeqeq: 'warn',
