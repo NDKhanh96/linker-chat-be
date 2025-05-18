@@ -1,3 +1,5 @@
+import Supertest from 'supertest';
+
 declare global {
     /**
      * Mở rộng interface của Promise để thêm phương thức toSafe
@@ -26,6 +28,11 @@ declare global {
          */
         toSafe<T = typeof this>(...args: unknown[]): [Error, null] | [null, T];
     }
+
+    /**
+     * Mở rộng interface của Supertest.Response để thêm thuộc tính body
+     */
+    type SRes<T> = Omit<Supertest.Response, 'body'> & { body: T };
 }
 
 export {};
