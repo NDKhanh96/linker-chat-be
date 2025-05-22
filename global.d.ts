@@ -33,6 +33,11 @@ declare global {
      * Mở rộng interface của Supertest.Response để thêm thuộc tính body
      */
     type SRes<T> = Omit<Supertest.Response, 'body'> & { body: T };
+
+    /**
+     * Bọc lấy type T để làm phẳng các thuộc tính của nó.
+     */
+    type Prettify<T> = { [K in keyof T]: T[K] } & {};
 }
 
 export {};
