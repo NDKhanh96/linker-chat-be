@@ -18,11 +18,12 @@ export class Account {
     email: string;
 
     /**
-     * @Column({ select: false }) chỉ có tác dụng với select, còn khi insert hay update thì vẫn trả ra giá trị của password nên cần thêm @Exclude.
+     * @Column({ select: false }) chỉ có tác dụng khi lấy dữ liệu từ db,
+     * còn khi insert hay update thì sẽ trả về cả giá giá trị trong db và giá trị trong đối số (có password) nên cần @Exclude để loại bỏ password.
      * Muốn kích hoạt @Exclude thì phải dùng plainToInstance để chuyển đổi từ object sang instance của class.
      */
     @Exclude()
-    @Column({ select: false })
+    @Column()
     password: string;
 
     @Expose()

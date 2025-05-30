@@ -23,11 +23,15 @@ async function bootstrap() {
     /**
      * - Tự động loại bỏ các trường không được khai báo trong DTO.
      * - Nếu request có trường không được khai báo trong DTO thì sẽ trả về lỗi.
+     * - transform để tự động chuyển đổi kiểu dữ liệu của các trường trong DTO.
+     * - Ví dụ: nếu trong DTO có trường age là number thì khi nhận request có trường age là string thì sẽ tự động chuyển đổi thành number.
+     * - Những plain object nhận từ request sẽ được chuyển đổi thành class instance theo DTO.
      */
     app.useGlobalPipes(
         new ValidationPipe({
             whitelist: true,
             forbidNonWhitelisted: true,
+            transform: true,
         }),
     );
 
