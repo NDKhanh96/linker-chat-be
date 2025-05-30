@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { AuthService } from '~/auth/auth.service';
-import { CreateAccountDto } from '~/auth/dto';
+import { CreateAccountDto, LoginAppMfaResDto, LoginDto, LoginJwtResDto } from '~/auth/dto';
 import type { Account } from '~/auth/entities';
+import type { LoginResponse } from '~/types';
+import { ApiResponseOneOf } from '~utils/decorator';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -19,13 +21,13 @@ export class AuthController {
         return await this.authService.register(body);
     }
 
-    @Get(':id')
-    findOne(@Param('id') id: string) {
-        return this.authService.findOne(+id);
-    }
-
-    @Delete(':id')
-    remove(@Param('id') id: string) {
-        return this.authService.remove(+id);
+    @Post('login')
+    @HttpCode(200)
+    @ApiBody({ type: LoginDto })
+    @ApiOperation({ summary: 'User login' })
+    @ApiResponseOneOf({ status: 200, description: 'Login response', models: [LoginJwtResDto, LoginAppMfaResDto] })
+    @ApiResponse({ status: 401, description: 'Unauthorized' })
+    async login(@Body() loginDTO: LoginDto): Promise<LoginResponse> {
+        return await this.authService.login(loginDTO);
     }
 }
