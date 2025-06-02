@@ -1,5 +1,3 @@
-// import '~/utils/safeExecutionExtensions';
-
 import { MailerService } from '@nestjs-modules/mailer';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -11,7 +9,7 @@ import { AuthService } from '~/auth/auth.service';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
 
 import { ConflictException } from '@nestjs/common';
-import { mockDto } from '~root/__mocks__';
+import { mockAccountRepository, mockDto, mockRefreshTokenRepository, mockRequest } from '~/__mocks__';
 
 describe('AuthService', () => {
     let authService: AuthService;
@@ -75,7 +73,7 @@ describe('AuthService', () => {
                             }
 
                             if (options.where?.email === mockDto.register.req.existedEmail.email) {
-                                return { id: 1, email: mockDto.register.req.existedEmail.email, enableAppMfa: false, isCredential: false };
+                                return mockAccountRepository.findOne.jwt;
                             }
 
                             return null;
@@ -85,7 +83,33 @@ describe('AuthService', () => {
                 },
                 {
                     provide: getRepositoryToken(RefreshToken),
-                    useValue: {},
+                    /**
+                     * Thêm các method mock với tên giống với method của refreshTokenRepository thật.
+                     */
+                    useValue: {
+                        findOne: jest.fn().mockImplementation(({ where: { token: refreshToken } }: { where: { token: string } }): RefreshToken | null => {
+                            if (refreshToken === mockRequest.refreshToken.correct.refreshToken) {
+                                return mockRefreshTokenRepository.findOne.correct;
+                            }
+
+                            if (refreshToken === mockRequest.refreshToken.wrong.tokenInvalid.refreshToken) {
+                                return null;
+                            }
+
+                            if (refreshToken === mockRequest.refreshToken.wrong.userIdInvalid.refreshToken) {
+                                return mockRefreshTokenRepository.findOne.wrong.userIdInvalid;
+                            }
+
+                            if (refreshToken === mockRequest.refreshToken.wrong.expiresToken.refreshToken) {
+                                return null;
+                            }
+
+                            return null;
+                        }),
+                        delete: jest.fn().mockResolvedValue(mockRefreshTokenRepository.delete),
+                        save: jest.fn().mockResolvedValue(mockRefreshTokenRepository.save),
+                        upsert: jest.fn().mockResolvedValue([null, {}]),
+                    },
                 },
                 {
                     provide: getRepositoryToken(VerifyToken),
@@ -134,6 +158,29 @@ describe('AuthService', () => {
             const user: Promise<Account> = authService.register(mockDto.register.req.existedEmail);
 
             await expect(user).rejects.toThrow(new ConflictException('Email already exists'));
+        });
+    });
+
+    describe('Method: login', (): void => {
+        it('should login successfully', async (): Promise<void> => {
+            const loginDTO = { email: mockDto.register.req.existedEmail.email, password: mockDto.register.req.existedEmail.password };
+            const response = await authService.login(loginDTO);
+
+            expect(response).toEqual(mockDto.loginInfo.res.jwt);
+        });
+
+        it('should throw UnauthorizedException if email does not exist', async (): Promise<void> => {
+            const loginDTO = { email: '1@gmail.com', password: '123456' };
+            const loginPromise: Promise<unknown> = authService.login(loginDTO);
+
+            await expect(loginPromise).rejects.toThrow('Invalid credentials');
+        });
+
+        it('should throw UnauthorizedException if password is incorrect', async (): Promise<void> => {
+            const loginDTO = { email: mockDto.register.req.existedEmail.email, password: 'wrongPassword' };
+            const loginPromise: Promise<unknown> = authService.login(loginDTO);
+
+            await expect(loginPromise).rejects.toThrow('Wrong email or password');
         });
     });
 });

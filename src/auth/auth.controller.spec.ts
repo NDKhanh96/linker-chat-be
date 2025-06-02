@@ -4,7 +4,7 @@ import { AuthController } from '~/auth/auth.controller';
 import { AuthService } from '~/auth/auth.service';
 import type { Account } from '~/auth/entities';
 
-import { mockDto, mockResponseData } from '~root/__mocks__';
+import { mockDto, mockResponseData } from '~/__mocks__';
 
 describe('AuthController', () => {
     let controller: AuthController;
@@ -35,6 +35,7 @@ describe('AuthController', () => {
                      */
                     useValue: {
                         register: jest.fn().mockResolvedValue(mockResponseData.register),
+                        login: jest.fn().mockResolvedValue(mockResponseData.login),
                     },
                 },
             ],
@@ -56,5 +57,14 @@ describe('AuthController', () => {
         const userInfo: Account = await controller.register(mockDto.register.req.newEmail);
 
         expect(userInfo).toEqual(mockResponseData.register);
+    });
+
+    it('should be return login response', async (): Promise<void> => {
+        const loginResponse = await controller.login({
+            email: '1@gmail.com',
+            password: '123456',
+        });
+
+        expect(loginResponse).toEqual(mockResponseData.login);
     });
 });

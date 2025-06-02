@@ -9,7 +9,7 @@ import { AppModule } from '~/app.module';
 import type { CreateAccountDto } from '~/auth/dto';
 import { RefreshToken } from '~/auth/entities';
 
-import { mockDto } from '~root/__mocks__';
+import { mockDto } from '~/__mocks__';
 
 /**
  * - Google OAuth 2.0 không thể test được vì cần phải vào trình duyệt để xác thực.

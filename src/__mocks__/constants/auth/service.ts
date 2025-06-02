@@ -1,3 +1,6 @@
+import type { Account, RefreshToken, VerifyToken } from '~/auth/entities';
+import type { User } from '~/user/entities';
+
 export const mockUserInfo = {
     correctPassword: 'correctPassword',
 };
@@ -9,7 +12,7 @@ export const mockDto = {
                 firstName: 'john',
                 lastName: 'doe',
                 avatar: '',
-                email: 'existed@gmail.com',
+                email: 'not_existed@gmail.com',
                 password: '123456',
                 confirmPassword: '123456',
                 isCredential: true,
@@ -18,7 +21,7 @@ export const mockDto = {
                 firstName: 'john',
                 lastName: 'doe',
                 avatar: '',
-                email: 'not_existed@gmail.com',
+                email: 'existed@gmail.com',
                 password: '123456',
                 confirmPassword: '123456',
                 isCredential: true,
@@ -59,7 +62,7 @@ export const mockDto = {
                         id: 19,
                         email: '20@gmail.com',
                         enableAppMfa: false,
-                        isCredential: true,
+                        isCredential: false,
                         user: {
                             id: 19,
                             firstName: 'john',
@@ -72,24 +75,35 @@ export const mockDto = {
         },
     },
     loginInfo: {
-        correct: {
-            jwtMethod: {
-                email: 'correctEmail@gmail.com',
-                password: mockUserInfo.correctPassword,
+        req: {
+            correct: {
+                jwtMethod: {
+                    email: 'correctEmail@gmail.com',
+                    password: mockUserInfo.correctPassword,
+                },
+                appMFAMethod: {
+                    email: 'correctEmailAppMFA@gmail.com',
+                    password: mockUserInfo.correctPassword,
+                },
             },
-            appMFAMethod: {
-                email: 'correctEmailAppMFA@gmail.com',
-                password: mockUserInfo.correctPassword,
+            wrong: {
+                emailInfo: {
+                    email: '123@gmail.com',
+                    password: mockUserInfo.correctPassword,
+                },
+                passwordInfo: {
+                    email: 'correctEmail@gmail.com',
+                    password: '123456',
+                },
             },
         },
-        wrong: {
-            emailInfo: {
-                email: '123@gmail.com',
-                password: mockUserInfo.correctPassword,
-            },
-            passwordInfo: {
-                email: 'correctEmail@gmail.com',
-                password: '123456',
+        res: {
+            jwt: {
+                authToken: { accessToken: 'mock access token', refreshToken: 'mock refresh token' },
+                email: 'existed@gmail.com',
+                enableAppMfa: false,
+                isCredential: true,
+                id: 1,
             },
         },
     },
@@ -168,6 +182,35 @@ export const mockResponse = {
     },
 };
 
+export const mockAccountRepository = {
+    findOne: {
+        jwt: {
+            id: 1,
+            email: 'existed@gmail.com',
+            password: '123456',
+            enableAppMfa: false,
+            isCredential: true,
+            refreshToken: undefined,
+            verifyToken: undefined,
+            user: {
+                id: 1,
+                firstName: 'john',
+                lastName: 'doe',
+                avatar: '',
+                account: undefined,
+                email: 'existed@gmail.com',
+                password: '123456',
+                confirmPassword: '123456',
+                isCredential: false,
+            },
+            firstName: 'john',
+            lastName: 'doe',
+            avatar: '',
+            confirmPassword: '123456',
+        },
+    },
+};
+
 export const mockRefreshTokenRepository = {
     findOne: {
         correct: {
@@ -180,6 +223,11 @@ export const mockRefreshTokenRepository = {
                 id: 1,
                 enableAppMfa: false,
                 isCredential: false,
+                password: '123456',
+                refreshToken: {} as RefreshToken,
+                verifyToken: {} as VerifyToken,
+                user: {} as User,
+                syncVerifyToken: {} as Account['syncVerifyToken'],
             },
         },
         wrong: {
@@ -194,6 +242,17 @@ export const mockRefreshTokenRepository = {
                 userId: 7777,
                 token: 'this is mock refresh token',
                 expiresAt: new Date(),
+                account: {
+                    email: '',
+                    id: 1,
+                    enableAppMfa: false,
+                    isCredential: false,
+                    password: '123456',
+                    refreshToken: {} as RefreshToken,
+                    verifyToken: {} as VerifyToken,
+                    user: {} as User,
+                    syncVerifyToken: {} as Account['syncVerifyToken'],
+                },
             },
         },
     },
