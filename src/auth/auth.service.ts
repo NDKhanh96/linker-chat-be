@@ -87,6 +87,31 @@ export class AuthService {
         return plainToInstance(LoginJwtResDto, { ...account, authToken }, { excludeExtraneousValues: true });
     }
 
+    async googleLogin(req: Express.Request): Promise<LoginResponse> {
+        if (!req.user) {
+            throw new UnauthorizedException('Google authentication failed');
+        }
+
+        const { firstName, lastName, avatar, email } = req.user;
+        let account: Account | null = await this.accountRepository.findOne({ where: { email } });
+
+        if (!account) {
+            account = await this.register({
+                firstName: firstName ?? '',
+                lastName: lastName ?? '',
+                avatar: avatar ?? '',
+                email,
+                password: '',
+                confirmPassword: '',
+                isCredential: false,
+            });
+        }
+
+        const authToken: AuthTokenDto = await this.generateUserTokens(account.email, account.id);
+
+        return plainToInstance(LoginJwtResDto, { ...account, authToken }, { excludeExtraneousValues: true });
+    }
+
     async generateUserTokens(userEmail: string, userId: number): Promise<AuthTokenDto> {
         const payload = {
             email: userEmail,

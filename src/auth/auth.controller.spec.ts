@@ -1,8 +1,11 @@
+import { UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import * as httpMocks from 'node-mocks-http';
 
 import { AuthController } from '~/auth/auth.controller';
 import { AuthService } from '~/auth/auth.service';
 import type { Account } from '~/auth/entities';
+import type { LoginResponse } from '~/types';
 
 import { mockDto, mockResponseData } from '~/__mocks__';
 
@@ -36,6 +39,18 @@ describe('AuthController', () => {
                     useValue: {
                         register: jest.fn().mockResolvedValue(mockResponseData.register),
                         login: jest.fn().mockResolvedValue(mockResponseData.login),
+                        googleLogin: jest.fn().mockImplementation((req: Express.Request): Promise<LoginResponse> | { message: string } => {
+                            if (req.user) {
+                                return Promise.resolve({
+                                    authToken: { accessToken: '', refreshToken: '' },
+                                    email: 'string',
+                                    enableAppMfa: false,
+                                    isCredential: false,
+                                    id: 1,
+                                });
+                            }
+                            throw new UnauthorizedException('Google authentication failed');
+                        }),
                     },
                 },
             ],
@@ -60,11 +75,33 @@ describe('AuthController', () => {
     });
 
     it('should be return login response', async (): Promise<void> => {
-        const loginResponse = await controller.login({
+        const loginResponse: LoginResponse = await controller.login({
             email: '1@gmail.com',
             password: '123456',
         });
 
         expect(loginResponse).toEqual(mockResponseData.login);
+    });
+
+    it('should call have error when user is undefined', async () => {
+        const req = httpMocks.createRequest({
+            method: 'GET',
+            url: '/auth/google/login',
+            user: { id: 1, email: mockDto.register.req.existedEmail.email },
+        });
+
+        const response: LoginResponse = await controller.googleLogin(req);
+
+        expect(response).toHaveProperty('authToken');
+    });
+
+    it('should call have error when user is undefined', async () => {
+        const req = httpMocks.createRequest({
+            method: 'GET',
+            url: '/auth/google/login',
+            user: undefined,
+        });
+
+        await expect(controller.googleLogin(req)).rejects.toThrow('Google authentication failed');
     });
 });

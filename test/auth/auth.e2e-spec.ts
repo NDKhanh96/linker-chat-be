@@ -1,3 +1,10 @@
+/**
+ * Cần unmock để dùng các thư viện thật trong test.
+ * Những thư viện mock vốn chỉ dùng trong unit test.
+ * Trong e2e test, ta cần dùng các thư viện thật để test các tính năng 1 cách thực tế.
+ */
+jest.unmock('bcrypt');
+
 import type { INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -31,7 +38,7 @@ describe('Auth', (): void => {
     });
 
     /**
-     * - Xóa tất cả dữ liệu trong database sau khi chạy xong mỗi test case.
+     * - Xóa tất cả dữ liệu trong database sau khi chạy xong tất cả test case.
      */
     afterAll(async (): Promise<void> => {
         const refreshTokenRepository: Repository<RefreshToken> = app.get(getRepositoryToken(RefreshToken));
@@ -52,5 +59,15 @@ describe('Auth', (): void => {
         expect(response.body.user.avatar).toBe(userDto.avatar);
         expect(response.body.user.firstName).toBe(userDto.firstName);
         expect(response.body.user.lastName).toBe(userDto.lastName);
+    });
+
+    it('/ (POST) login', async (): Promise<void> => {
+        const { email, password } = mockDto.register.req.newEmail;
+
+        const response: SRes<typeof mockDto.loginInfo.res.jwt> = await request(app.getHttpServer()).post('/auth/login').send({ email, password });
+
+        expect(response.status).toBe(200);
+        expect(response.body.authToken.accessToken).toBeDefined();
+        expect(response.body.authToken.refreshToken).toBeDefined();
     });
 });

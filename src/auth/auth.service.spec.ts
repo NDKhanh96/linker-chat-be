@@ -1,14 +1,15 @@
 import { MailerService } from '@nestjs-modules/mailer';
+import { ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import * as httpMocks from 'node-mocks-http';
 import type { FindOneOptions, Repository } from 'typeorm';
 
 import { AuthService } from '~/auth/auth.service';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
 
-import { ConflictException } from '@nestjs/common';
 import { mockAccountRepository, mockDto, mockRefreshTokenRepository, mockRequest } from '~/__mocks__';
 
 describe('AuthService', () => {
@@ -181,6 +182,38 @@ describe('AuthService', () => {
             const loginPromise: Promise<unknown> = authService.login(loginDTO);
 
             await expect(loginPromise).rejects.toThrow('Wrong email or password');
+        });
+
+        it('should login existing user with Google', async () => {
+            const req = httpMocks.createRequest({
+                method: 'GET',
+                url: '/auth/google/login',
+                user: { id: 1, email: mockDto.register.req.existedEmail.email },
+            });
+            const result = await authService.googleLogin(req);
+
+            expect(result).toHaveProperty('authToken');
+        });
+
+        it('should register new user with Google', async () => {
+            const req = httpMocks.createRequest({
+                method: 'GET',
+                url: '/auth/google/login',
+                user: { id: 1, email: mockDto.register.req.existedEmail.email },
+            });
+            const result = await authService.googleLogin(req);
+
+            expect(result).toHaveProperty('authToken');
+        });
+
+        it('should throw if req.user is missing', async () => {
+            const req = httpMocks.createRequest({
+                method: 'GET',
+                url: '/auth/google/login',
+                user: undefined,
+            });
+
+            await expect(authService.googleLogin(req)).rejects.toThrow('Google authentication failed');
         });
     });
 });
