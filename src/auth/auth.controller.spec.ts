@@ -1,16 +1,16 @@
-import { UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as httpMocks from 'node-mocks-http';
 
 import { AuthController } from '~/auth/auth.controller';
 import { AuthService } from '~/auth/auth.service';
 import type { Account } from '~/auth/entities';
-import type { LoginResponse } from '~/types';
+import type { LoginResponse, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 
 import { mockDto, mockResponseData } from '~/__mocks__';
 
 describe('AuthController', () => {
     let controller: AuthController;
+    let authService: AuthService;
 
     beforeEach(async (): Promise<void> => {
         /**
@@ -39,18 +39,9 @@ describe('AuthController', () => {
                     useValue: {
                         register: jest.fn().mockResolvedValue(mockResponseData.register),
                         login: jest.fn().mockResolvedValue(mockResponseData.login),
-                        googleLogin: jest.fn().mockImplementation((req: Express.Request): Promise<LoginResponse> | { message: string } => {
-                            if (req.user) {
-                                return Promise.resolve({
-                                    authToken: { accessToken: '', refreshToken: '' },
-                                    email: 'string',
-                                    enableAppMfa: false,
-                                    isCredential: false,
-                                    id: 1,
-                                });
-                            }
-                            throw new UnauthorizedException('Google authentication failed');
-                        }),
+                        socialLogin: jest.fn(),
+                        googleCallback: jest.fn(),
+                        googleLogin: jest.fn(),
                     },
                 },
             ],
@@ -62,6 +53,7 @@ describe('AuthController', () => {
          * Lưu ý rằng nếu không phải @Controller({ path: 'songs', scope: Scope.DEFAULT }) mà là Scope.TRANSIENT hay REQUEST thì không dùng dc module.get().
          */
         controller = module.get<AuthController>(AuthController);
+        authService = module.get<AuthService>(AuthService);
     });
 
     it('should be defined', () => {
@@ -83,25 +75,47 @@ describe('AuthController', () => {
         expect(loginResponse).toEqual(mockResponseData.login);
     });
 
-    it('should call have error when user is undefined', async () => {
-        const req = httpMocks.createRequest({
-            method: 'GET',
-            url: '/auth/google/login',
-            user: { id: 1, email: mockDto.register.req.existedEmail.email },
-        });
+    it('should call authService.socialLogin with correct params', () => {
+        const res = httpMocks.createResponse();
+        const query: QueryGoogleAuth = {
+            client_id: 'google',
+            code_challenge: 'challenge',
+            code_challenge_method: 'S256',
+            redirect_uri: 'http://localhost/callback',
+            response_type: 'code',
+            state: 'state',
+            scope: 'email profile',
+        };
 
-        const response: LoginResponse = await controller.googleLogin(req);
+        const spy = jest.spyOn(authService, 'socialLogin');
 
-        expect(response).toHaveProperty('authToken');
+        controller.socialLogin(res, query);
+
+        expect(spy).toHaveBeenCalledWith(res, query);
     });
 
-    it('should call have error when user is undefined', async () => {
-        const req = httpMocks.createRequest({
-            method: 'GET',
-            url: '/auth/google/login',
-            user: undefined,
-        });
+    it('should call authService.googleCallback with correct params', () => {
+        const res = httpMocks.createResponse();
+        const query: QueryGoogleCallback = {
+            code: 'test-code',
+            state: 'test-state',
+            authuser: '0',
+            prompt: 'consent',
+            scope: 'email profile',
+        };
+        const spy = jest.spyOn(authService, 'googleCallback');
 
-        await expect(controller.googleLogin(req)).rejects.toThrow('Google authentication failed');
+        controller.googleCallback(res, query);
+
+        expect(spy).toHaveBeenCalledWith(res, query);
+    });
+
+    it('should call authService.googleLogin and return login response', async () => {
+        const body = { code: 'test-code', codeVerifier: 'test-verifier' };
+        const spy = jest.spyOn(authService, 'googleLogin');
+
+        await controller.googleLogin(body);
+
+        expect(spy).toHaveBeenCalledWith(body);
     });
 });

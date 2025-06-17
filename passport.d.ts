@@ -1,13 +1,15 @@
 import 'passport';
 
+import type { CreateAccountDto } from '~/auth/dto';
+
 declare global {
     namespace Express {
         export interface User {
             id: number;
-            email: string;
-            firstName?: string;
-            lastName?: string;
-            avatar?: string;
+            email: CreateAccountDto['email'];
+            firstName: CreateAccountDto['firstName'];
+            lastName: CreateAccountDto['firstName'];
+            avatar: CreateAccountDto['firstName'];
         }
     }
 }

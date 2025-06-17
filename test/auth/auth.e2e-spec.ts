@@ -5,16 +5,17 @@
  */
 jest.unmock('bcrypt');
 
-import type { INestApplication } from '@nestjs/common';
+import { type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Server } from 'net';
-import * as request from 'supertest';
+import request from 'supertest';
 import type { Repository } from 'typeorm';
 
 import { AppModule } from '~/app.module';
 import type { CreateAccountDto } from '~/auth/dto';
 import { RefreshToken } from '~/auth/entities';
+import type { QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 
 import { mockDto } from '~/__mocks__';
 
@@ -47,7 +48,7 @@ describe('Auth', (): void => {
         await app.close();
     });
 
-    it('/ (POST) register', async (): Promise<void> => {
+    it('/register (POST)', async (): Promise<void> => {
         const userDto: CreateAccountDto = mockDto.register.req.newEmail;
 
         const response: SRes<typeof mockDto.register.res.service.register.complete> = await request(app.getHttpServer()).post('/auth/register').send(userDto);
@@ -61,7 +62,7 @@ describe('Auth', (): void => {
         expect(response.body.user.lastName).toBe(userDto.lastName);
     });
 
-    it('/ (POST) login', async (): Promise<void> => {
+    it('/login (POST)', async (): Promise<void> => {
         const { email, password } = mockDto.register.req.newEmail;
 
         const response: SRes<typeof mockDto.loginInfo.res.jwt> = await request(app.getHttpServer()).post('/auth/login').send({ email, password });
@@ -69,5 +70,55 @@ describe('Auth', (): void => {
         expect(response.status).toBe(200);
         expect(response.body.authToken.accessToken).toBeDefined();
         expect(response.body.authToken.refreshToken).toBeDefined();
+    });
+
+    it('/auth/social/login (GET) should redirect to Google OAuth', async () => {
+        const googleAuthQuery: QueryGoogleAuth = {
+            code_challenge: 'test_challenge',
+            code_challenge_method: 'S256',
+            redirect_uri: 'myapp://callback',
+            client_id: 'google',
+            response_type: 'code',
+            state: 'test_state',
+            scope: 'openid email profile',
+        };
+        const response = await request(app.getHttpServer()).get('/auth/social/login').query(googleAuthQuery);
+
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toContain('https://accounts.google.com/o/oauth2/v2/auth');
+        expect(response.headers.location).toContain('client_id=');
+    });
+
+    it('/auth/google/callback (GET) should redirect to app scheme with code and state', async () => {
+        const callbackQuery: QueryGoogleCallback = {
+            code: 'test-code',
+            state: 'myapp://callback|raw-state-value',
+            authuser: '0',
+            prompt: 'consent',
+            scope: 'openid email profile',
+        };
+
+        const response = await request(app.getHttpServer()).get('/auth/google/callback').query(callbackQuery);
+
+        expect(response.status).toBe(302);
+        expect(response.headers.location).toContain('myapp://callback?');
+        expect(response.headers.location).toContain('code=test-code');
+        expect(response.headers.location).toContain('state=raw-state-value');
+    });
+
+    /**
+     * Trường hợp này thường sẽ fail vì không có Google token thật, nên chỉ test trả về lỗi.
+     */
+    it('/auth/google/login (POST) should return 401 if Google token is invalid', async () => {
+        const body = { code: 'invalid-code', codeVerifier: 'invalid-verifier' };
+
+        const response = await request(app.getHttpServer()).post('/auth/google/login').send(body);
+
+        expect(response.status).toBe(401);
+        expect(response.body).toEqual({
+            message: 'Invalid Google token',
+            error: 'Unauthorized',
+            statusCode: 401,
+        });
     });
 });

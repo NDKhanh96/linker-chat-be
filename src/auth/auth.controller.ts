@@ -1,11 +1,11 @@
-import { Body, Controller, Get, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { Body, Controller, Get, HttpCode, Post, Query, Res } from '@nestjs/common';
 import { ApiBody, ApiExcludeEndpoint, ApiOAuth2, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { type Response } from 'express';
 
 import { AuthService } from '~/auth/auth.service';
 import { CreateAccountDto, LoginAppMfaResDto, LoginDto, LoginJwtResDto } from '~/auth/dto';
 import type { Account } from '~/auth/entities';
-import type { LoginResponse } from '~/types';
+import type { LoginResponse, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 import { ApiResponseOneOf } from '~utils/decorator';
 
 @ApiOAuth2(['profile', 'email'], 'oauth2')
@@ -33,15 +33,21 @@ export class AuthController {
         return await this.authService.login(loginDTO);
     }
 
-    @Get('google/login')
-    @UseGuards(AuthGuard('google'))
+    @Get('social/login')
     @ApiExcludeEndpoint()
-    async goToGoogleLogin(): Promise<void> {}
+    socialLogin(@Res() res: Response, @Query() query: QueryGoogleAuth): void {
+        return this.authService.socialLogin(res, query);
+    }
 
     @Get('google/callback')
-    @UseGuards(AuthGuard('google'))
     @ApiExcludeEndpoint()
-    async googleLogin(@Req() req: Express.Request): Promise<LoginResponse> {
-        return await this.authService.googleLogin(req);
+    googleCallback(@Res() res: Response, @Query() query: QueryGoogleCallback): void {
+        return this.authService.googleCallback(res, query);
+    }
+
+    @Post('google/login')
+    @ApiExcludeEndpoint()
+    async googleLogin(@Body() body: { code: string; codeVerifier: string }): Promise<LoginResponse> {
+        return this.authService.googleLogin(body);
     }
 }

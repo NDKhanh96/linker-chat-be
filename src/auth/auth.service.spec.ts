@@ -1,14 +1,18 @@
 import { MailerService } from '@nestjs-modules/mailer';
-import { ConflictException } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { ConflictException, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as httpMocks from 'node-mocks-http';
+import { of } from 'rxjs';
 import type { FindOneOptions, Repository } from 'typeorm';
 
 import { AuthService } from '~/auth/auth.service';
+import { LoginJwtResDto } from '~/auth/dto';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
+import type { QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 
 import { mockAccountRepository, mockDto, mockRefreshTokenRepository, mockRequest } from '~/__mocks__';
 
@@ -16,10 +20,14 @@ describe('AuthService', () => {
     let authService: AuthService;
     let configService: ConfigService;
     let jwtService: JwtService;
+    let httpService: HttpService;
     let accountRepository: Repository<Account>;
     let refreshTokenRepository: Repository<RefreshToken>;
     let verifyTokenRepository: Repository<VerifyToken>;
 
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
     beforeEach(async (): Promise<void> => {
         const module: TestingModule = await Test.createTestingModule({
             /**
@@ -53,6 +61,29 @@ describe('AuthService', () => {
                     provide: JwtService,
                     useValue: {
                         sign: jest.fn().mockReturnValue('mock access token'),
+                        decode: jest.fn().mockReturnValue({ header: { kid: 'mock-kid' } }),
+                    },
+                },
+                {
+                    provide: HttpService,
+                    useValue: {
+                        post: jest.fn().mockReturnValue(of({ data: { id_token: 'mock-id-token' } })),
+                        get: jest.fn().mockReturnValue(
+                            of({
+                                data: {
+                                    keys: [
+                                        {
+                                            kid: 'mock-kid',
+                                            kty: 'RSA',
+                                            alg: 'RS256',
+                                            use: 'sig',
+                                            n: 'mock_n',
+                                            e: 'A',
+                                        },
+                                    ],
+                                },
+                            }),
+                        ),
                     },
                 },
                 /**
@@ -128,6 +159,7 @@ describe('AuthService', () => {
         authService = module.get<AuthService>(AuthService);
         configService = module.get<ConfigService>(ConfigService);
         jwtService = module.get<JwtService>(JwtService);
+        httpService = module.get<HttpService>(HttpService);
         accountRepository = module.get<Repository<Account>>(getRepositoryToken(Account));
         refreshTokenRepository = module.get<Repository<RefreshToken>>(getRepositoryToken(RefreshToken));
         verifyTokenRepository = module.get<Repository<VerifyToken>>(getRepositoryToken(VerifyToken));
@@ -137,6 +169,7 @@ describe('AuthService', () => {
         expect(authService).toBeDefined();
         expect(configService).toBeDefined();
         expect(jwtService).toBeDefined();
+        expect(httpService).toBeDefined();
         expect(accountRepository).toBeDefined();
         expect(refreshTokenRepository).toBeDefined();
         expect(verifyTokenRepository).toBeDefined();
@@ -184,36 +217,135 @@ describe('AuthService', () => {
             await expect(loginPromise).rejects.toThrow('Wrong email or password');
         });
 
-        it('should login existing user with Google', async () => {
-            const req = httpMocks.createRequest({
-                method: 'GET',
-                url: '/auth/google/login',
-                user: { id: 1, email: mockDto.register.req.existedEmail.email },
-            });
-            const result = await authService.googleLogin(req);
+        it('should throw error if query.client is not provided', () => {
+            const query: QueryGoogleAuth = {
+                client_id: 'not_provided',
+                code_challenge: '',
+                code_challenge_method: '',
+                redirect_uri: '',
+                response_type: '',
+                scope: '',
+                state: '',
+            };
+            const response = httpMocks.createResponse();
 
-            expect(result).toHaveProperty('authToken');
+            expect(() => authService.socialLogin(response, query)).toThrow(UnprocessableEntityException);
+            expect(() => authService.socialLogin(response, query)).toThrow('Invalid client_id');
         });
 
-        it('should register new user with Google', async () => {
-            const req = httpMocks.createRequest({
-                method: 'GET',
-                url: '/auth/google/login',
-                user: { id: 1, email: mockDto.register.req.existedEmail.email },
-            });
-            const result = await authService.googleLogin(req);
+        it('should call googleAuthorize if provider is google', () => {
+            const query: QueryGoogleAuth = {
+                client_id: 'google',
+                code_challenge: '',
+                code_challenge_method: '',
+                redirect_uri: '',
+                response_type: '',
+                scope: '',
+                state: '',
+            };
+            const response = httpMocks.createResponse();
+            const spy = jest.spyOn(authService, 'googleAuthorize');
 
-            expect(result).toHaveProperty('authToken');
+            authService.socialLogin(response, query);
+
+            expect(spy).toHaveBeenCalledWith(response, query);
         });
 
-        it('should throw if req.user is missing', async () => {
-            const req = httpMocks.createRequest({
-                method: 'GET',
-                url: '/auth/google/login',
-                user: undefined,
+        it('should redirect to Google OAuth URL with correct params', () => {
+            const response = httpMocks.createResponse();
+
+            const query = {
+                scope: 'email profile',
+                state: 'test-state',
+                code_challenge: 'test-challenge',
+                code_challenge_method: 'S256',
+                redirect_uri: 'http://localhost:3000/callback',
+                client_id: 'google',
+                response_type: 'code',
+            };
+
+            Reflect.set(authService, 'googleClientId', 'mock-google-client-id');
+            Reflect.set(authService, 'callbackUri', 'http://localhost:8080/api/auth/google/callback');
+
+            const spy = jest.spyOn(response, 'redirect');
+
+            authService.googleAuthorize(response, query);
+
+            expect(spy).toHaveBeenCalledTimes(1);
+
+            const redirectUrl = spy.mock.calls[0][0];
+
+            expect(redirectUrl).toContain('https://accounts.google.com/o/oauth2/v2/auth?');
+            expect(redirectUrl).toContain('client_id=mock-google-client-id');
+            // cspell:disable-next-line
+            expect(redirectUrl).toContain('redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fapi%2Fauth%2Fgoogle%2Fcallback');
+            expect(redirectUrl).toContain('scope=email+profile');
+            // cspell:disable-next-line
+            expect(redirectUrl).toContain('state=http%3A%2F%2Flocalhost%3A3000%2Fcallback%7Ctest-state');
+            expect(redirectUrl).toContain('code_challenge=test-challenge');
+            expect(redirectUrl).toContain('code_challenge_method=S256');
+            expect(redirectUrl).toContain('prompt=select_account');
+            expect(redirectUrl).toContain('response_type=code');
+        });
+
+        it('should redirect to appScheme with code and state as query params', () => {
+            const response = httpMocks.createResponse();
+
+            const query: QueryGoogleCallback = {
+                code: 'test-code',
+                scope: 'email profile',
+                state: 'myapp://callback|raw-state-value',
+                authuser: '0',
+                prompt: 'consent',
+            };
+
+            const spy = jest.spyOn(response, 'redirect');
+
+            authService.googleCallback(response, query);
+
+            expect(spy).toHaveBeenCalledTimes(1);
+
+            const redirectUrl = spy.mock.calls[0][0];
+
+            expect(redirectUrl).toContain('myapp://callback?');
+            expect(redirectUrl).toContain('code=test-code');
+            expect(redirectUrl).toContain('state=raw-state-value');
+        });
+
+        it('should login with existing account', async () => {
+            jest.spyOn(JwtService.prototype, 'verify').mockReturnValue({
+                email: '20@gmail.com',
+                picture: 'avatar_url',
+                given_name: 'Test',
+                family_name: 'User',
             });
 
-            await expect(authService.googleLogin(req)).rejects.toThrow('Google authentication failed');
+            const body = { code: 'test-code', codeVerifier: 'test-verifier' };
+            const userInfo = {
+                id: 19,
+                email: '20@gmail.com',
+                picture: 'avatar_url',
+                given_name: 'Test',
+                family_name: 'User',
+            };
+            const getGoogleUserInfoSpy = jest.spyOn(authService, 'getGoogleUserInfo');
+            const findOneSpy = jest.spyOn(accountRepository, 'findOne');
+            const generateUserTokensSpy = jest.spyOn(authService, 'generateUserTokens');
+
+            const result = await authService.googleLogin(body);
+
+            expect(getGoogleUserInfoSpy).toHaveBeenCalledWith(body);
+            expect(findOneSpy).toHaveBeenCalledWith({ where: { email: userInfo.email } });
+            expect(generateUserTokensSpy).toHaveBeenCalledWith(userInfo.email, userInfo.id);
+            expect(result).toBeInstanceOf(LoginJwtResDto);
+        });
+
+        it('should register and login if account does not exist', async () => {});
+
+        it('should throw UnauthorizedException if Google token is invalid', async () => {
+            const body = { code: 'bad-code', codeVerifier: 'bad-verifier' };
+
+            await expect(authService.googleLogin(body)).rejects.toThrow(UnauthorizedException);
         });
     });
 });
