@@ -1,5 +1,7 @@
 import { plainToInstance } from 'class-transformer';
-import { IsBoolean, IsNotEmpty, IsNumber, IsString, validateSync, type ValidationError } from 'class-validator';
+import { IsNotEmpty, IsString, validateSync, type ValidationError } from 'class-validator';
+
+import { ValidateBoolean, ValidateNumber } from '~utils/decorator';
 
 /**
  * Việc validate ở đây có 2 tác dụng:
@@ -8,11 +10,11 @@ import { IsBoolean, IsNotEmpty, IsNumber, IsString, validateSync, type Validatio
  */
 export class EnvFileVariables {
     @IsNotEmpty()
-    @IsNumber()
+    @ValidateNumber()
     APP_PORT: number;
 
     @IsNotEmpty()
-    @IsBoolean()
+    @ValidateBoolean()
     DB_SYNCHRONIZE: boolean;
 
     @IsNotEmpty()
@@ -20,7 +22,7 @@ export class EnvFileVariables {
     DB_HOST: string;
 
     @IsNotEmpty()
-    @IsNumber()
+    @ValidateNumber()
     DB_PORT: number;
 
     @IsNotEmpty()
@@ -35,7 +37,7 @@ export class EnvFileVariables {
     DB_PASSWORD: string;
 
     @IsNotEmpty()
-    @IsBoolean()
+    @ValidateBoolean()
     DB_AUTO_DROP_SCHEMA: boolean;
 
     @IsNotEmpty()
@@ -78,7 +80,7 @@ export function validate(config: Record<string, unknown>): EnvFileVariables {
          * Tuy nhiên, bất kỳ chuỗi nào không rỗng (non-empty string) khi được chuyển đổi sang boolean sẽ luôn là true.
          * Vì vậy nếu muốn giá trị chuyển đổi từ string sang boolean là false thì phải để là string rỗng
          */
-        enableImplicitConversion: true,
+        enableImplicitConversion: false,
     });
     const errors: ValidationError[] = validateSync(validatedConfig, {
         skipMissingProperties: false,
