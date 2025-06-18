@@ -7,7 +7,7 @@ import { AuthController } from '~/auth/auth.controller';
 import { AuthService } from '~/auth/auth.service';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
 import { JwtStrategy } from '~/auth/strategies';
-import { MailerServiceModule } from '~utils/configs/mailerService';
+import { MailerServiceModule } from '~utils/configs';
 
 @Module({
     imports: [TypeOrmModule.forFeature([Account, RefreshToken, VerifyToken]), ConfigModule, MailerServiceModule, HttpModule],

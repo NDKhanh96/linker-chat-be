@@ -1,7 +1,7 @@
 /**
  * This import must be the first import in the file.
  */
-import 'src/utils/safeExecutionExtensions';
+import '~utils/safe-execution-extension';
 
 import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';

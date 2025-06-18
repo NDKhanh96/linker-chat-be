@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import type { EnvFileVariables } from 'src/utils/environment';
+
+import type { EnvFileVariables } from '~utils/environment';
 
 @Module({
     imports: [
