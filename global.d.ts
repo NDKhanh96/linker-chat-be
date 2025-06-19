@@ -15,6 +15,10 @@ declare global {
 
     /**
      * Mở rộng interface của Function để thêm phương thức toSafe
+     * toSafe và toSafeAsync có thể gây lỗi type nếu sử dụng với function nhiều overload
+     * để xử lý có thể tách hàm như sau:
+     * - const getBaseUrl = () => this.configService.get('BASE_URL', { infer: true });
+     * - const [err, baseUrl] = getBaseUrl.toSafe();
      */
     interface Function {
         /**
@@ -26,7 +30,14 @@ declare global {
          *  - const [error, result] = verify.toSafe(token);
          *  - const [error, result] = this.jwtService.verify.bind(this.jwtService).toSafe(token);
          */
-        toSafe<T = typeof this>(...args: unknown[]): [Error, null] | [null, T];
+        toSafe<Args extends unknown[], R>(this: (...args: Args) => R, ...args: Args): [Error, null] | [null, R];
+
+        /**
+         * Xử lý ngoại lệ cho async function mà không cần try/catch.
+         * Nếu function không trả về Promise sẽ throw error.
+         * Đầu ra là [Error, null] hoặc [null, T].
+         */
+        toSafeAsync<Args extends unknown[], T>(this: (...args: Args) => Promise<T>, ...args: Args): Promise<[Error, null] | [null, T]>;
     }
 
     /**

@@ -2,13 +2,30 @@ Function.prototype.toSafe = function <T>(this: (...args: unknown[]) => T, ...arg
     try {
         const result: T = this(...args);
 
-        return [null, result];
-    } catch (error: unknown) {
-        if (error instanceof Error) {
-            return [error, null];
+        if (result instanceof Promise) {
+            throw new Error('Only sync function are supported in toSafe');
         }
 
-        const err = new Error(typeof error === 'string' ? error : JSON.stringify(error));
+        return [null, result];
+    } catch (error: unknown) {
+        const err: Error = error instanceof Error ? error : new Error(typeof error === 'string' ? error : JSON.stringify(error));
+
+        return [err, null];
+    }
+};
+
+Function.prototype.toSafeAsync = async function <T>(this: (...args: unknown[]) => T, ...args: unknown[]): Promise<[Error, null] | [null, Awaited<T>]> {
+    try {
+        const result: T = this(...args);
+
+        if (!(result instanceof Promise)) {
+            throw new Error('Only promises are supported in toSafeAsync');
+        }
+        const data: Awaited<T> = await result;
+
+        return [null, data];
+    } catch (error: unknown) {
+        const err: Error = error instanceof Error ? error : new Error(typeof error === 'string' ? error : JSON.stringify(error));
 
         return [err, null];
     }
@@ -20,11 +37,7 @@ Promise.prototype.toSafe = async function <T>(this: Promise<T>): Promise<[Error,
 
         return [null, result];
     } catch (error: unknown) {
-        if (error instanceof Error) {
-            return [error, null];
-        }
-
-        const err = new Error(typeof error === 'string' ? error : JSON.stringify(error));
+        const err: Error = error instanceof Error ? error : new Error(typeof error === 'string' ? error : JSON.stringify(error));
 
         return [err, null];
     }
