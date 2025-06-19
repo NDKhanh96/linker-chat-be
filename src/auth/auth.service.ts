@@ -4,6 +4,7 @@ import { ConflictException, Injectable, ServiceUnavailableException, Unauthorize
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
+import { AxiosError } from 'axios';
 import { compare, genSalt, hash } from 'bcrypt';
 import { plainToInstance } from 'class-transformer';
 import { type Response } from 'express';
@@ -13,7 +14,7 @@ import type { Repository } from 'typeorm';
 import { v4 } from 'uuid';
 
 import type { AuthTokenDto, CreateAccountDto, LoginAppMfaResDto, LoginDto } from '~/auth/dto';
-import { LoginJwtResDto } from '~/auth/dto';
+import { GoogleLoginErrorDto, LoginJwtResDto } from '~/auth/dto';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
 import type { GoogleIdTokenDecoded, JwksResponse, LoginResponse, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 import { User } from '~/user/entities';
@@ -164,10 +165,16 @@ export class AuthService {
     }
 
     async googleLogin(body: { code: string; codeVerifier: string }): Promise<LoginResponse> {
-        const [error, userInfo] = await this.getGoogleUserInfo(body).toSafe();
+        const [error, userInfo] = await this.getGoogleUserInfo.bind(this).toSafeAsync(body);
+
+        if (error instanceof AxiosError) {
+            const data: GoogleLoginErrorDto = plainToInstance(GoogleLoginErrorDto, error.response?.data);
+
+            throw new UnauthorizedException(data.error, data.error_description);
+        }
 
         if (error) {
-            throw new UnauthorizedException('Invalid Google token');
+            throw new UnauthorizedException(error.message, 'Invalid Google token');
         }
 
         const { email, picture, given_name, family_name } = userInfo;

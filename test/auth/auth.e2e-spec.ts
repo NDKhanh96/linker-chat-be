@@ -116,8 +116,8 @@ describe('Auth', (): void => {
 
         expect(response.status).toBe(401);
         expect(response.body).toEqual({
-            message: 'Invalid Google token',
-            error: 'Unauthorized',
+            error: 'Malformed auth code.',
+            message: 'invalid_grant',
             statusCode: 401,
         });
     });

@@ -1,3 +1,5 @@
+import '~utils/safe-execution-extension';
+
 import { MailerService } from '@nestjs-modules/mailer';
 import { HttpService } from '@nestjs/axios';
 import { ConflictException, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
@@ -321,23 +323,20 @@ describe('AuthService', () => {
             });
 
             const body = { code: 'test-code', codeVerifier: 'test-verifier' };
-            const userInfo = {
-                id: 19,
-                email: '20@gmail.com',
-                picture: 'avatar_url',
-                given_name: 'Test',
-                family_name: 'User',
-            };
-            const getGoogleUserInfoSpy = jest.spyOn(authService, 'getGoogleUserInfo');
-            const findOneSpy = jest.spyOn(accountRepository, 'findOne');
-            const generateUserTokensSpy = jest.spyOn(authService, 'generateUserTokens');
 
             const result = await authService.googleLogin(body);
 
-            expect(getGoogleUserInfoSpy).toHaveBeenCalledWith(body);
-            expect(findOneSpy).toHaveBeenCalledWith({ where: { email: userInfo.email } });
-            expect(generateUserTokensSpy).toHaveBeenCalledWith(userInfo.email, userInfo.id);
             expect(result).toBeInstanceOf(LoginJwtResDto);
+            expect(result).toEqual({
+                authToken: {
+                    accessToken: 'mock access token',
+                    refreshToken: 'mock refresh token',
+                },
+                email: '20@gmail.com',
+                enableAppMfa: false,
+                isCredential: false,
+                id: 19,
+            });
         });
 
         it('should register and login if account does not exist', async () => {});

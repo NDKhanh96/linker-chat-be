@@ -19,6 +19,7 @@ declare global {
      * để xử lý có thể tách hàm như sau:
      * - const getBaseUrl = () => this.configService.get('BASE_URL', { infer: true });
      * - const [err, baseUrl] = getBaseUrl.toSafe();
+     * * Lưu ý: toSafe và toSafeAsync không hoạt động với function mock của jest và sẽ lỗi do mock không 2 mở rộng này.
      */
     interface Function {
         /**
