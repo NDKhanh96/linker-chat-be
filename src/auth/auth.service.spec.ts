@@ -2,7 +2,7 @@ import '~utils/safe-execution-extension';
 
 import { MailerService } from '@nestjs-modules/mailer';
 import { HttpService } from '@nestjs/axios';
-import { ConflictException, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -219,20 +219,28 @@ describe('AuthService', () => {
             await expect(loginPromise).rejects.toThrow('Wrong email or password');
         });
 
-        it('should throw error if query.client is not provided', () => {
+        it('should redirect with error if client_id is not supported', () => {
             const query: QueryGoogleAuth = {
-                client_id: 'not_provided',
+                client_id: 'not_provided' as QueryGoogleAuth['client_id'],
                 code_challenge: '',
                 code_challenge_method: '',
-                redirect_uri: '',
+                redirect_uri: 'myapp://callback|raw-state-value',
                 response_type: '',
                 scope: '',
                 state: '',
             };
             const response = httpMocks.createResponse();
+            const spy = jest.spyOn(response, 'redirect');
 
-            expect(() => authService.socialLogin(response, query)).toThrow(UnprocessableEntityException);
-            expect(() => authService.socialLogin(response, query)).toThrow('Invalid client_id');
+            authService.socialLogin(response, query);
+
+            expect(spy).toHaveBeenCalledTimes(1);
+            const redirectUrl = spy.mock.calls[0][0];
+
+            expect(redirectUrl).toContain('myapp://callback?');
+            expect(redirectUrl).toContain('error=not_supported');
+            expect(redirectUrl).toContain('myapp://callback?error=not_supported&message=Invalid+client_id&state=raw-state-value');
+            expect(redirectUrl).toContain('state=raw-state-value');
         });
 
         it('should call googleAuthorize if provider is google', () => {
@@ -256,7 +264,7 @@ describe('AuthService', () => {
         it('should redirect to Google OAuth URL with correct params', () => {
             const response = httpMocks.createResponse();
 
-            const query = {
+            const query: QueryGoogleAuth = {
                 scope: 'email profile',
                 state: 'test-state',
                 code_challenge: 'test-challenge',

@@ -7,7 +7,9 @@ export type JwtPayload = {
     sub: number;
 };
 
-export type QueryGoogleAuth = Record<'code_challenge' | 'code_challenge_method' | 'redirect_uri' | 'client_id' | 'response_type' | 'state' | 'scope', string>;
+export type QueryGoogleAuth = Record<'code_challenge' | 'code_challenge_method' | 'redirect_uri' | 'response_type' | 'state' | 'scope', string> & {
+    client_id: 'google' | 'facebook' | 'github';
+};
 
 export type QueryGoogleCallback = Record<'state' | 'code' | 'scope' | 'authuser' | 'prompt', string>;
 

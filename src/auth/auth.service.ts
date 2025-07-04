@@ -111,20 +111,20 @@ export class AuthService {
      * Tại method đó sẽ sử dụng client_id trong .env riêng.
      */
     socialLogin(response: Response, query: QueryGoogleAuth): void {
-        switch (query.client_id) {
-            case 'google': {
-                return this.googleAuthorize(response, query);
-            }
-            case 'facebook': {
-                throw new ServiceUnavailableException('Facebook login is not supported yet');
-            }
-            case 'github': {
-                throw new ServiceUnavailableException('Github login is not supported yet');
-            }
-            default: {
-                throw new UnprocessableEntityException('Invalid client_id');
-            }
+        const { client_id } = query;
+
+        if (client_id === 'google') {
+            return this.googleAuthorize(response, query);
         }
+
+        const errorMessages: Record<typeof client_id, string> = {
+            facebook: 'Facebook login is not supported yet',
+            github: 'Github login is not supported yet',
+        };
+
+        const message: string = errorMessages[client_id] ?? 'Invalid client_id';
+
+        return this.redirectWithError(response, query, 'not_supported', message);
     }
 
     googleAuthorize(response: Response, query: QueryGoogleAuth): void {
@@ -307,5 +307,16 @@ export class AuthService {
         }
 
         return hashPassword;
+    }
+
+    private redirectWithError(response: Response, query: QueryGoogleAuth, error: string, message: string): void {
+        const [appScheme, state] = query.redirect_uri.split('|');
+        const outgoingParams = new URLSearchParams({
+            error,
+            message,
+            state,
+        });
+
+        return response.redirect(`${appScheme}?${outgoingParams.toString()}`);
     }
 }
