@@ -7,19 +7,19 @@ export class VerifyToken {
     @PrimaryColumn()
     id: number;
 
-    @Column({ default: '' })
+    @Column({ name: 'forgot_password_secret', default: '' })
     forgotPasswordSecret: string;
 
-    @Column({ default: '' })
+    @Column({ name: 'mail_mfa_secret', default: '' })
     mailMfaSecret: string;
 
-    @Column({ default: '' })
+    @Column({ name: 'app_mfa_secret', default: '' })
     appMfaSecret: string;
 
-    @Column()
+    @Column({ name: 'user_id' })
     userId: number;
 
-    @Column()
+    @Column({ name: 'user_email' })
     userEmail: string;
 
     /**

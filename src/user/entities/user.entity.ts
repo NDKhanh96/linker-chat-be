@@ -13,11 +13,11 @@ export class User {
     id: number;
 
     @Expose()
-    @Column()
+    @Column({ name: 'first_name' })
     firstName: string;
 
     @Expose()
-    @Column()
+    @Column({ name: 'last_name' })
     lastName: string;
 
     @Expose()

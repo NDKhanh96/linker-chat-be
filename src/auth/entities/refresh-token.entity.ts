@@ -7,13 +7,13 @@ export class RefreshToken {
     @PrimaryGeneratedColumn()
     id: number;
 
-    @Column()
+    @Column({ name: 'user_id' })
     userId: number;
 
     @Column()
     token: string;
 
-    @Column()
+    @Column({ name: 'expires_at' })
     expiresAt: Date;
 
     /**

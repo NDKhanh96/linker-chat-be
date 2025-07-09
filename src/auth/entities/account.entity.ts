@@ -27,11 +27,11 @@ export class Account {
     password: string;
 
     @Expose()
-    @Column({ default: false, type: 'boolean' })
+    @Column({ name: 'enable_app_mfa', default: false, type: 'boolean' })
     enableAppMfa: boolean;
 
     @Expose()
-    @Column({ default: true, type: 'boolean' })
+    @Column({ name: 'is_credential', default: true, type: 'boolean' })
     isCredential: boolean;
 
     @Expose()
