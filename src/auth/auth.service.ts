@@ -99,7 +99,7 @@ export class AuthService {
             return this.generateAppMfaUrl();
         }
 
-        const authToken: AuthTokenDto = await this.generateUserTokens(account.email, account.id);
+        const authToken: AuthTokenDto = await this.generateAccountTokens(account.email, account.id);
 
         return plainToInstance(LoginJwtResDto, { ...account, authToken }, { excludeExtraneousValues: true });
     }
@@ -192,7 +192,7 @@ export class AuthService {
             });
         }
 
-        const authToken: AuthTokenDto = await this.generateUserTokens(account.email, account.id);
+        const authToken: AuthTokenDto = await this.generateAccountTokens(account.email, account.id);
 
         return plainToInstance(LoginJwtResDto, { ...account, authToken }, { excludeExtraneousValues: true });
     }
@@ -255,15 +255,15 @@ export class AuthService {
         return jwkToPem(key);
     }
 
-    async generateUserTokens(userEmail: string, userId: number): Promise<AuthTokenDto> {
+    async generateAccountTokens(accountEmail: string, accountId: number): Promise<AuthTokenDto> {
         const payload = {
-            email: userEmail,
-            sub: userId,
+            email: accountEmail,
+            sub: accountId,
         };
         const accessToken: string = this.jwtService.sign(payload);
         const refreshToken: string = v4();
 
-        await this.storeRefreshToken(refreshToken, userId);
+        await this.storeRefreshToken(refreshToken, accountId);
 
         return {
             accessToken,
@@ -271,11 +271,11 @@ export class AuthService {
         };
     }
 
-    async storeRefreshToken(token: string, userId: number): Promise<void> {
+    async storeRefreshToken(token: string, accountId: number): Promise<void> {
         const expiresIn = parseInt(this.configService.get('REFRESH_TOKEN_EXPIRES_IN', { infer: true }), 10);
         const expiresAt = new Date(Date.now() + expiresIn * 24 * 60 * 60 * 1000);
 
-        const [error] = await this.refreshTokenRepository.upsert({ token, userId, expiresAt }, ['userId']).toSafe();
+        const [error] = await this.refreshTokenRepository.upsert({ token, expiresAt, account: { id: accountId } }, ['account']).toSafe();
 
         if (error) {
             throw new ServiceUnavailableException(error.message, error.stack);

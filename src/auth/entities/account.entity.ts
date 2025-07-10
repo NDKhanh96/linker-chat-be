@@ -1,5 +1,5 @@
 import { Exclude, Expose, Type } from 'class-transformer';
-import { BeforeInsert, BeforeUpdate, Column, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn, VersionColumn } from 'typeorm';
 
 import { RefreshToken, VerifyToken } from '~/auth/entities';
 import { User } from '~/user/entities';
@@ -12,6 +12,10 @@ export class Account {
     @Expose()
     @PrimaryGeneratedColumn()
     id: number;
+
+    @Expose()
+    @VersionColumn()
+    version: number;
 
     @Expose()
     @Column()
@@ -35,6 +39,37 @@ export class Account {
     isCredential: boolean;
 
     @Expose()
+    @Column({ name: 'is_active', type: 'boolean', default: true })
+    isActive: boolean;
+
+    @Expose()
+    @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+    createdAt: Date;
+
+    @Expose()
+    @Column({ name: 'updated_at', type: 'timestamp', nullable: true, onUpdate: 'CURRENT_TIMESTAMP' })
+    updatedAt: Date | null;
+
+    @Expose()
+    @DeleteDateColumn({ name: 'deleted_at', type: 'timestamp', nullable: true })
+    deletedAt: Date | null;
+
+    @Expose()
+    @ManyToOne(() => User)
+    @JoinColumn({ name: 'created_by' })
+    createdBy: number | null;
+
+    @Expose()
+    @ManyToOne(() => User)
+    @JoinColumn({ name: 'updated_by' })
+    updatedBy: number | null;
+
+    @Expose()
+    @ManyToOne(() => User)
+    @JoinColumn({ name: 'deleted_by' })
+    deletedBy: number | null;
+
+    @Expose()
     @OneToOne(() => RefreshToken, refreshToken => refreshToken.account)
     refreshToken: RefreshToken;
 
@@ -49,26 +84,9 @@ export class Account {
      */
     @Expose()
     @Type(() => User)
-    @JoinColumn()
+    @JoinColumn({ name: 'user_id' })
     @OneToOne(() => User, user => user.account, { cascade: true, onDelete: 'CASCADE' })
     user: User;
-
-    /**
-     * Cập nhật verifyToken và refreshToken khi cập nhật account
-     */
-    @Expose()
-    @BeforeInsert()
-    @BeforeUpdate()
-    syncVerifyToken(): void {
-        if (this.verifyToken) {
-            this.verifyToken.userEmail = this.email;
-            this.verifyToken.userId = this.id;
-        }
-
-        if (this.refreshToken) {
-            this.refreshToken.userId = this.id;
-        }
-    }
 
     constructor(partial: Partial<Account>) {
         Object.assign(this, partial);

@@ -1,5 +1,5 @@
 import { Expose, Type } from 'class-transformer';
-import { Column, Entity, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn, VersionColumn } from 'typeorm';
 
 import { Account } from '~/auth/entities';
 
@@ -13,6 +13,10 @@ export class User {
     id: number;
 
     @Expose()
+    @VersionColumn()
+    version: number;
+
+    @Expose()
     @Column({ name: 'first_name' })
     firstName: string;
 
@@ -23,6 +27,37 @@ export class User {
     @Expose()
     @Column()
     avatar: string;
+
+    @Expose()
+    @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+    createdAt: Date;
+
+    @Expose()
+    @Column({ name: 'updated_at', type: 'timestamp', nullable: true, onUpdate: 'CURRENT_TIMESTAMP' })
+    updatedAt: Date | null;
+
+    @Expose()
+    @DeleteDateColumn({ name: 'deleted_at', type: 'timestamp', nullable: true })
+    deletedAt: Date | null;
+
+    @Expose()
+    @ManyToOne(() => User)
+    @JoinColumn({ name: 'created_by' })
+    createdBy: number | null;
+
+    @Expose()
+    @ManyToOne(() => User)
+    @JoinColumn({ name: 'updated_by' })
+    updatedBy: number | null;
+
+    @Expose()
+    @ManyToOne(() => User)
+    @JoinColumn({ name: 'deleted_by' })
+    deletedBy: number | null;
+
+    @Expose()
+    @Column({ name: 'is_active', type: 'boolean', default: true })
+    isActive: boolean;
 
     /**
      * @Type để khi dùng plainToInstance lên User thì cũng sẽ có tác dụng lên class Account.
