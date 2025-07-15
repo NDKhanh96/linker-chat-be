@@ -9,16 +9,28 @@ import { compare, genSalt, hash } from 'bcrypt';
 import { plainToInstance } from 'class-transformer';
 import { type Response } from 'express';
 import jwkToPem from 'jwk-to-pem';
+import * as OTPAuth from 'otpauth';
 import { firstValueFrom } from 'rxjs';
-import type { Repository } from 'typeorm';
+import { MoreThanOrEqual, type Repository } from 'typeorm';
 import { v4 } from 'uuid';
 
-import type { AuthTokenDto, CreateAccountDto, LoginAppMfaResDto, LoginDto } from '~/auth/dto';
+import type { AuthTokenDto, CreateAccountDto, LoginDto } from '~/auth/dto';
 import { GoogleLoginErrorDto, LoginJwtResDto } from '~/auth/dto';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
-import type { GoogleIdTokenDecoded, JwksResponse, LoginResponse, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
+import type { GoogleIdTokenDecoded, JwksResponse, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 import { User } from '~/user/entities';
 import type { EnvFileVariables } from '~utils/environment';
+
+const OTP_CONFIG = {
+    ALGORITHM: 'SHA1',
+    DIGITS: 6,
+    PERIOD: 30,
+    /**
+     * window: 1 để cho phép mã OTP có thể được sử dụng trước hoặc sau thời gian hiện tại 1 đơn vị thời gian.
+     * tránh việc độ trễ mạng cao hoặc máy chủ chậm khiến mã OTP không hợp lệ.
+     */
+    WINDOW: 1,
+} as const;
 
 @Injectable()
 export class AuthService {
@@ -61,6 +73,7 @@ export class AuthService {
         const account = new Account({
             ...accountDTO,
             user: new User({ ...accountDTO }),
+            verifyToken: new VerifyToken({}),
         });
 
         const [savedAccountError, savedAccount] = await this.accountRepository.save(account).toSafe();
@@ -77,13 +90,9 @@ export class AuthService {
         return plainToInstance(Account, savedAccount, { excludeExtraneousValues: true });
     }
 
-    async login(loginDTO: LoginDto): Promise<LoginResponse> {
+    async login(loginDTO: LoginDto): Promise<LoginJwtResDto> {
         const { email, password } = loginDTO;
-        const account: Account | null = await this.accountRepository.findOne({ where: { email } });
-
-        if (!account) {
-            throw new UnauthorizedException('Invalid credentials');
-        }
+        const account = await this.findAccountByEmail(email);
 
         const [error, passwordMatch] = await compare(password, account.password).toSafe();
 
@@ -95,13 +104,85 @@ export class AuthService {
             throw new UnauthorizedException('Wrong email or password');
         }
 
-        if (account.enableAppMfa && account.verifyToken.appMfaSecret) {
-            return this.generateAppMfaUrl();
-        }
-
-        const authToken: AuthTokenDto = await this.generateAccountTokens(account.email, account.id);
+        const authToken: AuthTokenDto | undefined = account.enableAppMfa ? undefined : await this.generateAccountTokens(account.email, account.id);
 
         return plainToInstance(LoginJwtResDto, { ...account, authToken }, { excludeExtraneousValues: true });
+    }
+
+    async refreshToken(refreshToken: string): Promise<AuthTokenDto> {
+        const token: RefreshToken | null = await this.refreshTokenRepository.findOne({
+            where: {
+                token: refreshToken,
+                expiresAt: MoreThanOrEqual(new Date()),
+            },
+            relations: ['account'],
+        });
+
+        if (!token) {
+            throw new UnauthorizedException('Refresh Token Invalid');
+        }
+
+        return this.generateAccountTokens(token.account.email, token.account.id);
+    }
+
+    async enableAppMFA(accountId: number): Promise<{ secret: string }> {
+        const account = await this.findAccountById(accountId);
+
+        if (account.enableAppMfa) {
+            return { secret: account.verifyToken.appMfaSecret };
+        }
+
+        const secret = new OTPAuth.Secret();
+
+        const [error] = await this.accountRepository.manager
+            .transaction(async transactionalEntityManager => {
+                account.enableAppMfa = true;
+                account.verifyToken.appMfaSecret = secret.base32;
+
+                await transactionalEntityManager.save(Account, account);
+            })
+            .toSafe();
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+
+        return { secret: secret.base32 };
+    }
+
+    async disableAppMFA(accountId: number): Promise<{ secret: string }> {
+        const account = await this.findAccountById(accountId);
+
+        if (!account.enableAppMfa) {
+            throw new UnprocessableEntityException('App MFA is not enabled');
+        }
+
+        const [error] = await this.accountRepository.manager
+            .transaction(async transactionalEntityManager => {
+                account.enableAppMfa = false;
+                account.verifyToken.appMfaSecret = '';
+
+                await transactionalEntityManager.save(Account, account);
+            })
+            .toSafe();
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+
+        return { secret: '' };
+    }
+
+    async validateAppMFAToken(accountId: number, token: string): Promise<{ verified: boolean }> {
+        const account = await this.findAccountById(accountId);
+
+        if (!account.enableAppMfa || !account.verifyToken.appMfaSecret) {
+            throw new UnprocessableEntityException('App MFA is not enabled');
+        }
+
+        const verified = this.validateEmailOtp(token, OTPAuth.Secret.fromBase32(account.verifyToken.appMfaSecret), account.email);
+
+        return { verified };
     }
 
     /**
@@ -164,7 +245,7 @@ export class AuthService {
         return response.redirect(appScheme + '?' + outgoingParams.toString());
     }
 
-    async googleLogin(body: { code: string; codeVerifier: string }): Promise<LoginResponse> {
+    async googleLogin(body: { code: string; codeVerifier: string }): Promise<LoginJwtResDto> {
         const [error, userInfo] = await this.getGoogleUserInfo.bind(this).toSafeAsync(body);
 
         if (error instanceof AxiosError) {
@@ -282,15 +363,6 @@ export class AuthService {
         }
     }
 
-    generateAppMfaUrl(): LoginAppMfaResDto {
-        const baseUrl: string = this.configService.get('BASE_URL', { infer: true });
-
-        return {
-            validateAppMFA: `${baseUrl}/auth/appMFA/validate`,
-            message: 'Please login by validating the appMFA token.',
-        };
-    }
-
     /**
      * Có thể sử dụng mà không cần bắt ngoại lệ.
      */
@@ -318,5 +390,73 @@ export class AuthService {
         });
 
         return response.redirect(`${appScheme}?${outgoingParams.toString()}`);
+    }
+
+    validateEmailOtp(token: string, secret: OTPAuth.Secret, accountEmail: string): boolean {
+        const totp = new OTPAuth.TOTP({
+            secret,
+            label: accountEmail,
+            issuer: 'Linker Chat',
+            algorithm: OTP_CONFIG.ALGORITHM,
+            digits: OTP_CONFIG.DIGITS,
+            period: OTP_CONFIG.PERIOD,
+        });
+
+        const [error, result] = totp.validate.bind(totp).toSafe({
+            /**
+             * window: 1 để cho phép mã OTP có thể được sử dụng trước hoặc sau thời gian hiện tại 1 đơn vị thời gian.
+             * tránh việc độ trễ mạng cao hoặc máy chủ chậm khiến mã OTP không hợp lệ.
+             */
+            window: OTP_CONFIG.WINDOW,
+            token,
+        });
+
+        if (error || result === null) {
+            const message: string = error instanceof Error ? error.message : 'Error while verifying OTP';
+
+            throw new UnauthorizedException(message);
+        }
+
+        return typeof result === 'number';
+    }
+
+    /**
+     * Tìm kiếm tài khoản theo ID và trả về tài khoản nếu tìm thấy - Có relation với verify token.
+     * Nếu không tìm thấy tài khoản, ném ra UnauthorizedException - 401.
+     * @param accountId - ID của tài khoản cần tìm kiếm.
+     * @returns Promise<Account> - Tài khoản nếu tìm thấy.
+     * @throws UnauthorizedException - Nếu không tìm thấy tài khoản.
+     */
+    private async findAccountById(id: number): Promise<Account> {
+        const account: Account | null = await this.accountRepository.findOne({
+            where: { id },
+            relations: ['verifyToken'],
+        });
+
+        if (!account) {
+            throw new UnauthorizedException('Invalid credentials');
+        }
+
+        return account;
+    }
+
+    /**
+     * Tìm kiếm tài khoản theo email và trả về tài khoản nếu tìm thấy - Có relation với verify token.
+     * Nếu không tìm thấy tài khoản, ném ra UnauthorizedException - 401.
+     * @param email - Email của tài khoản cần tìm kiếm.
+     * @returns Promise<Account> - Tài khoản nếu tìm thấy.
+     * @throws UnauthorizedException - Nếu không tìm thấy tài khoản.
+     */
+    private async findAccountByEmail(email: string): Promise<Account> {
+        const account: Account | null = await this.accountRepository.findOne({
+            where: { email },
+            relations: ['verifyToken'],
+        });
+
+        if (!account) {
+            throw new UnauthorizedException('Invalid credentials');
+        }
+
+        return account;
     }
 }

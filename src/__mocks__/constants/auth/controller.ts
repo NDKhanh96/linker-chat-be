@@ -21,4 +21,18 @@ export const mockResponseData = {
         isCredential: false,
         id: 1,
     },
+    refreshToken: {
+        accessToken: 'new-access-token',
+        refreshToken: 'new-refresh-token',
+    },
+    enableAppMFA: {
+        // cspell:disable-next-line
+        secret: 'JBSWY3DPEHPK3PXP',
+    },
+    disableAppMFA: {
+        secret: '',
+    },
+    validateAppMFA: {
+        verified: true,
+    },
 };

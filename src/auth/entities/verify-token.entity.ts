@@ -1,12 +1,12 @@
 import { Expose } from 'class-transformer';
-import { Column, Entity, JoinColumn, OneToOne, PrimaryColumn } from 'typeorm';
+import { Column, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
 
 import { Account } from '~/auth/entities';
 
 @Entity('verify_tokens')
 export class VerifyToken {
     @Expose()
-    @PrimaryColumn()
+    @PrimaryGeneratedColumn()
     id: number;
 
     @Expose()

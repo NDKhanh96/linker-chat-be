@@ -3,8 +3,17 @@ import * as httpMocks from 'node-mocks-http';
 
 import { AuthController } from '~/auth/auth.controller';
 import { AuthService } from '~/auth/auth.service';
+import type {
+    AuthTokenDto,
+    LoginJwtResDto,
+    MfaSecretResponseDto,
+    MfaValidationResponseDto,
+    RefreshTokenDto,
+    ToggleAppMfaDto,
+    ValidateTokenDTO,
+} from '~/auth/dto';
 import type { Account } from '~/auth/entities';
-import type { LoginResponse, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
+import type { QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 
 import { mockDto, mockResponseData } from '~/__mocks__';
 
@@ -39,6 +48,10 @@ describe('AuthController', () => {
                     useValue: {
                         register: jest.fn().mockResolvedValue(mockResponseData.register),
                         login: jest.fn().mockResolvedValue(mockResponseData.login),
+                        refreshToken: jest.fn().mockResolvedValue(mockResponseData.refreshToken),
+                        enableAppMFA: jest.fn().mockResolvedValue(mockResponseData.enableAppMFA),
+                        disableAppMFA: jest.fn().mockResolvedValue(mockResponseData.disableAppMFA),
+                        validateAppMFAToken: jest.fn().mockResolvedValue(mockResponseData.validateAppMFA),
                         socialLogin: jest.fn(),
                         googleCallback: jest.fn(),
                         googleLogin: jest.fn(),
@@ -60,62 +73,142 @@ describe('AuthController', () => {
         expect(controller).toBeDefined();
     });
 
-    it('should be return user information except password', async (): Promise<void> => {
-        const userInfo: Account = await controller.register(mockDto.register.req.newEmail);
+    describe('Authentication', () => {
+        it('should return user information except password when registering', async (): Promise<void> => {
+            const userInfo: Account = await controller.register(mockDto.register.req.newEmail);
 
-        expect(userInfo).toEqual(mockResponseData.register);
-    });
-
-    it('should be return login response', async (): Promise<void> => {
-        const loginResponse: LoginResponse = await controller.login({
-            email: '1@gmail.com',
-            password: '123456',
+            expect(userInfo).toEqual(mockResponseData.register);
         });
 
-        expect(loginResponse).toEqual(mockResponseData.login);
+        it('should return login response when credentials are valid', async (): Promise<void> => {
+            const loginResponse: LoginJwtResDto = await controller.login({
+                email: '1@gmail.com',
+                password: '123456',
+            });
+
+            expect(loginResponse).toEqual(mockResponseData.login);
+        });
+
+        it('should return new access and refresh tokens', async (): Promise<void> => {
+            const refreshTokenDto: RefreshTokenDto = {
+                refreshToken: 'valid-refresh-token',
+            };
+            const spy = jest.spyOn(authService, 'refreshToken');
+
+            const authTokenResponse: AuthTokenDto = await controller.refreshToken(refreshTokenDto);
+
+            expect(authTokenResponse).toEqual(mockResponseData.refreshToken);
+            expect(spy).toHaveBeenCalledWith(refreshTokenDto.refreshToken);
+        });
     });
 
-    it('should call authService.socialLogin with correct params', () => {
-        const res = httpMocks.createResponse();
-        const query: QueryGoogleAuth = {
-            client_id: 'google',
-            code_challenge: 'challenge',
-            code_challenge_method: 'S256',
-            redirect_uri: 'http://localhost/callback',
-            response_type: 'code',
-            state: 'state',
-            scope: 'email profile',
-        };
+    describe('Social Authentication', () => {
+        it('should call authService.socialLogin with correct params', () => {
+            const res = httpMocks.createResponse();
+            const query: QueryGoogleAuth = {
+                client_id: 'google',
+                code_challenge: 'challenge',
+                code_challenge_method: 'S256',
+                redirect_uri: 'http://localhost/callback',
+                response_type: 'code',
+                state: 'state',
+                scope: 'email profile',
+            };
 
-        const spy = jest.spyOn(authService, 'socialLogin');
+            const spy = jest.spyOn(authService, 'socialLogin');
 
-        controller.socialLogin(res, query);
+            controller.socialLogin(res, query);
 
-        expect(spy).toHaveBeenCalledWith(res, query);
+            expect(spy).toHaveBeenCalledWith(res, query);
+        });
+
+        it('should call authService.googleCallback with correct params', () => {
+            const res = httpMocks.createResponse();
+            const query: QueryGoogleCallback = {
+                code: 'test-code',
+                state: 'test-state',
+                authuser: '0',
+                prompt: 'consent',
+                scope: 'email profile',
+            };
+            const spy = jest.spyOn(authService, 'googleCallback');
+
+            controller.googleCallback(res, query);
+
+            expect(spy).toHaveBeenCalledWith(res, query);
+        });
+
+        it('should call authService.googleLogin and return login response', async () => {
+            const body = { code: 'test-code', codeVerifier: 'test-verifier' };
+            const spy = jest.spyOn(authService, 'googleLogin');
+
+            await controller.googleLogin(body);
+
+            expect(spy).toHaveBeenCalledWith(body);
+        });
     });
 
-    it('should call authService.googleCallback with correct params', () => {
-        const res = httpMocks.createResponse();
-        const query: QueryGoogleCallback = {
-            code: 'test-code',
-            state: 'test-state',
-            authuser: '0',
-            prompt: 'consent',
-            scope: 'email profile',
-        };
-        const spy = jest.spyOn(authService, 'googleCallback');
+    describe('MFA Operations', () => {
+        const mockAuthenticatedRequest = {
+            user: { id: 1 },
+        } as Express.AuthenticatedRequest;
 
-        controller.googleCallback(res, query);
+        it('should enable App MFA and return secret', async (): Promise<void> => {
+            const toggleDto: ToggleAppMfaDto = { toggle: true };
+            const spy = jest.spyOn(authService, 'enableAppMFA');
 
-        expect(spy).toHaveBeenCalledWith(res, query);
-    });
+            const response: MfaSecretResponseDto = await controller.toggleAppMFA(mockAuthenticatedRequest, toggleDto);
 
-    it('should call authService.googleLogin and return login response', async () => {
-        const body = { code: 'test-code', codeVerifier: 'test-verifier' };
-        const spy = jest.spyOn(authService, 'googleLogin');
+            expect(response).toEqual(mockResponseData.enableAppMFA);
+            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id);
+        });
 
-        await controller.googleLogin(body);
+        it('should disable App MFA and return empty secret', async (): Promise<void> => {
+            const toggleDto: ToggleAppMfaDto = { toggle: false };
+            const spy = jest.spyOn(authService, 'disableAppMFA');
 
-        expect(spy).toHaveBeenCalledWith(body);
+            const response: MfaSecretResponseDto = await controller.toggleAppMFA(mockAuthenticatedRequest, toggleDto);
+
+            expect(response).toEqual(mockResponseData.disableAppMFA);
+            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id);
+        });
+
+        it('should validate App MFA token and return verification result', async (): Promise<void> => {
+            const validateTokenDto: ValidateTokenDTO = { token: '123456' };
+            const spy = jest.spyOn(authService, 'validateAppMFAToken');
+
+            const response: MfaValidationResponseDto = await controller.validateAppMFAToken(mockAuthenticatedRequest, validateTokenDto);
+
+            expect(response).toEqual(mockResponseData.validateAppMFA);
+            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, validateTokenDto.token);
+        });
+
+        it('should handle toggle MFA based on boolean value', async (): Promise<void> => {
+            const enableSpy = jest.spyOn(authService, 'enableAppMFA');
+            const disableSpy = jest.spyOn(authService, 'disableAppMFA');
+
+            // Test enable case
+            await controller.toggleAppMFA(mockAuthenticatedRequest, { toggle: true });
+            expect(enableSpy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id);
+            expect(disableSpy).not.toHaveBeenCalled();
+
+            // Reset spies
+            enableSpy.mockClear();
+            disableSpy.mockClear();
+
+            // Test disable case
+            await controller.toggleAppMFA(mockAuthenticatedRequest, { toggle: false });
+            expect(disableSpy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id);
+            expect(enableSpy).not.toHaveBeenCalled();
+        });
+
+        it('should pass correct parameters to validateAppMFAToken service', async (): Promise<void> => {
+            const validateTokenDto: ValidateTokenDTO = { token: '654321' };
+            const spy = jest.spyOn(authService, 'validateAppMFAToken');
+
+            await controller.validateAppMFAToken(mockAuthenticatedRequest, validateTokenDto);
+
+            expect(spy).toHaveBeenCalledWith(1, '654321');
+        });
     });
 });

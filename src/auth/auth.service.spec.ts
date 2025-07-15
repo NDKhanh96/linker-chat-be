@@ -2,21 +2,21 @@ import '~utils/safe-execution-extension';
 
 import { MailerService } from '@nestjs-modules/mailer';
 import { HttpService } from '@nestjs/axios';
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as httpMocks from 'node-mocks-http';
 import { of } from 'rxjs';
-import type { FindOneOptions, Repository } from 'typeorm';
+import type { EntityManager, FindOneOptions, Repository } from 'typeorm';
 
 import { AuthService } from '~/auth/auth.service';
 import { LoginJwtResDto } from '~/auth/dto';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
 import type { QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 
-import { mockAccountRepository, mockDto, mockRefreshTokenRepository, mockRequest } from '~/__mocks__';
+import { mockAccountRepository, mockDto, mockMfaData, mockRefreshTokenRepository, mockRequest } from '~/__mocks__';
 
 describe('AuthService', () => {
     let authService: AuthService;
@@ -31,6 +31,8 @@ describe('AuthService', () => {
         jest.restoreAllMocks();
     });
     beforeEach(async (): Promise<void> => {
+        jest.clearAllMocks();
+        jest.restoreAllMocks();
         const module: TestingModule = await Test.createTestingModule({
             /**
              * Inject các dependency cần thiết cho service để khởi tạo testing module.
@@ -109,10 +111,25 @@ describe('AuthService', () => {
                             if (options.where?.email === mockDto.register.req.existedEmail.email) {
                                 return mockAccountRepository.findOne.jwt;
                             }
+                            if (options.where?.id === mockAccountRepository.findOne.JWT_MFA_TRUE.id) {
+                                return mockAccountRepository.findOne.JWT_MFA_TRUE;
+                            }
 
                             return null;
                         }),
                         save: jest.fn().mockResolvedValue(mockDto.register.res.repository.account.save),
+                        manager: {
+                            transaction: jest.fn().mockImplementation(async (callback: (manager: Partial<EntityManager>) => Promise<void>) => {
+                                const mockTransactionManager: Partial<EntityManager> = {
+                                    update: jest.fn().mockResolvedValue({}),
+                                    save: jest.fn().mockResolvedValue({}),
+                                };
+
+                                await callback(mockTransactionManager);
+
+                                return Promise.resolve();
+                            }),
+                        },
                     },
                 },
                 {
@@ -353,6 +370,108 @@ describe('AuthService', () => {
             const body = { code: 'bad-code', codeVerifier: 'bad-verifier' };
 
             await expect(authService.googleLogin(body)).rejects.toThrow(UnauthorizedException);
+        });
+    });
+
+    describe('Method: refreshToken', () => {
+        it('should return new tokens when refresh token is valid', async () => {
+            jest.spyOn(refreshTokenRepository, 'findOne').mockResolvedValue(mockRefreshTokenRepository.findOne.correct);
+
+            const mockTokens = {
+                accessToken: 'new-access-token',
+                refreshToken: 'new-refresh-token',
+            };
+
+            jest.spyOn(authService, 'generateAccountTokens').mockResolvedValue(mockTokens);
+
+            const result = await authService.refreshToken('valid-refresh-token');
+
+            expect(result).toEqual(mockTokens);
+        });
+
+        it('should throw UnauthorizedException when refresh token is invalid', async () => {
+            jest.spyOn(refreshTokenRepository, 'findOne').mockResolvedValue(null);
+
+            await expect(authService.refreshToken('invalid-token')).rejects.toThrow(new UnauthorizedException('Refresh Token Invalid'));
+        });
+
+        it('should throw UnauthorizedException when refresh token is expired', async () => {
+            jest.spyOn(refreshTokenRepository, 'findOne').mockResolvedValue(null);
+
+            await expect(authService.refreshToken('expired-token')).rejects.toThrow(new UnauthorizedException('Refresh Token Invalid'));
+        });
+    });
+
+    describe('MFA Operations', () => {
+        describe('Method: enableAppMFA', () => {
+            it('should enable MFA and return new secret when MFA is disabled', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockMfaData.validAccount);
+
+                const result = await authService.enableAppMFA(1);
+
+                expect(result).toHaveProperty('secret');
+                expect(typeof result.secret).toBe('string');
+                expect(result.secret).not.toBe('');
+            });
+
+            it('should throw UnauthorizedException when account not found', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
+
+                await expect(authService.enableAppMFA(999)).rejects.toThrow(UnauthorizedException);
+            });
+        });
+
+        describe('Method: disableAppMFA', () => {
+            it('should disable MFA and return empty secret', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockMfaData.enabledMfaAccount);
+
+                const result = await authService.disableAppMFA(1);
+
+                expect(result).toEqual({ secret: '' });
+            });
+
+            it('should throw UnprocessableEntityException when MFA is not enabled', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockMfaData.disabledMfaAccount);
+
+                await expect(authService.disableAppMFA(1)).rejects.toThrow(new UnprocessableEntityException('App MFA is not enabled'));
+            });
+
+            it('should throw UnauthorizedException when account not found', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
+
+                await expect(authService.disableAppMFA(999)).rejects.toThrow(UnauthorizedException);
+            });
+        });
+
+        describe('Method: validateAppMFAToken', () => {
+            it('should return verified true when token is valid', async () => {
+                jest.spyOn(authService, 'validateEmailOtp').mockReturnValue(true);
+
+                const result = await authService.validateAppMFAToken(2, '123456');
+
+                expect(result).toEqual({ verified: true });
+            });
+
+            it('should return verified false when token is invalid', async () => {
+                // jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockMfaData.enabledMfaAccount);
+                jest.spyOn(authService, 'validateEmailOtp').mockReturnValue(false);
+
+                const result = await authService.validateAppMFAToken(2, '000000');
+
+                expect(result).toEqual({ verified: false });
+            });
+
+            it('should throw UnprocessableEntityException when MFA is not enabled', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockMfaData.disabledMfaAccount);
+
+                await expect(authService.validateAppMFAToken(1, '123456')).rejects.toThrow(new UnprocessableEntityException('App MFA is not enabled'));
+            });
+
+            it('should throw UnauthorizedException when account not found', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
+
+                await expect(authService.validateAppMFAToken(999, '123456')).rejects.toThrow(UnauthorizedException);
+            });
         });
     });
 });

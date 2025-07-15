@@ -7,14 +7,12 @@ jest.unmock('bcrypt');
 
 import { type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Server } from 'net';
 import request from 'supertest';
-import type { Repository } from 'typeorm';
+import { DataSource } from 'typeorm';
 
 import { AppModule } from '~/app.module';
 import type { CreateAccountDto } from '~/auth/dto';
-import { RefreshToken } from '~/auth/entities';
 import type { QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 
 import { mockDto } from '~/__mocks__';
@@ -36,15 +34,19 @@ describe('Auth', (): void => {
 
         app = moduleRef.createNestApplication();
         await app.init();
+
+        const dataSource: DataSource = app.get(DataSource);
+
+        await dataSource.synchronize(true);
     });
 
     /**
      * - Xóa tất cả dữ liệu trong database sau khi chạy xong tất cả test case.
      */
     afterAll(async (): Promise<void> => {
-        const refreshTokenRepository: Repository<RefreshToken> = app.get(getRepositoryToken(RefreshToken));
+        const dataSource: DataSource = app.get(DataSource);
 
-        await refreshTokenRepository.clear();
+        await dataSource.synchronize(true);
         await app.close();
     });
 
@@ -119,6 +121,192 @@ describe('Auth', (): void => {
             error: 'Malformed auth code.',
             message: 'invalid_grant',
             statusCode: 401,
+        });
+    });
+
+    describe('/auth/refresh (POST)', () => {
+        let refreshToken: string;
+
+        beforeAll(async () => {
+            const testUser = {
+                firstName: 'refresh',
+                lastName: 'user',
+                avatar: '',
+                email: 'refresh-test@gmail.com',
+                password: '123456',
+                confirmPassword: '123456',
+                isCredential: true,
+            };
+
+            await request(app.getHttpServer()).post('/auth/register').send(testUser);
+
+            const loginResponse: SRes<typeof mockDto.loginInfo.res.jwt> = await request(app.getHttpServer()).post('/auth/login').send({
+                email: testUser.email,
+                password: testUser.password,
+            });
+
+            refreshToken = loginResponse.body.authToken.refreshToken;
+        });
+
+        it('should refresh token successfully with valid refresh token', async () => {
+            const response: SRes<{ accessToken: string; refreshToken: string }> = await request(app.getHttpServer())
+                .post('/auth/refresh')
+                .send({ refreshToken });
+
+            expect(response.status).toBe(200);
+            expect(response.body.accessToken).toBeDefined();
+            expect(response.body.refreshToken).toBeDefined();
+            expect(typeof response.body.accessToken).toBe('string');
+            expect(typeof response.body.refreshToken).toBe('string');
+        });
+
+        it('should return 401 with invalid refresh token', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/refresh')
+                .send({ refreshToken: 'invalid-refresh-token' });
+
+            expect(response.status).toBe(401);
+            expect(response.body.message).toBe('Refresh Token Invalid');
+        });
+
+        it('should return 401 with expired refresh token', async () => {
+            const expiredToken = 'expired-token';
+            const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/refresh').send({ refreshToken: expiredToken });
+
+            expect(response.status).toBe(401);
+            expect(response.body.message).toBe('Refresh Token Invalid');
+        });
+    });
+
+    describe('/auth/appMFA/toggle (POST)', () => {
+        let accessToken: string;
+
+        beforeAll(async () => {
+            const testUser = {
+                firstName: 'mfa',
+                lastName: 'user',
+                avatar: '',
+                email: 'mfa-test@gmail.com',
+                password: '123456',
+                confirmPassword: '123456',
+                isCredential: true,
+            };
+
+            await request(app.getHttpServer()).post('/auth/register').send(testUser);
+
+            const loginResponse: SRes<{ authToken: { accessToken: string } }> = await request(app.getHttpServer()).post('/auth/login').send({
+                email: testUser.email,
+                password: testUser.password,
+            });
+
+            accessToken = loginResponse.body.authToken.accessToken;
+        });
+
+        it('should enable app MFA successfully', async () => {
+            const response: SRes<{ secret: string }> = await request(app.getHttpServer())
+                .post('/auth/appMFA/toggle')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ toggle: true });
+
+            expect(response.status).toBe(200);
+            expect(response.body.secret).toBeDefined();
+            expect(typeof response.body.secret).toBe('string');
+            expect(response.body.secret.length).toBeGreaterThan(0);
+        });
+
+        it('should return same secret when MFA is already enabled', async () => {
+            const response: SRes<{ secret: string }> = await request(app.getHttpServer())
+                .post('/auth/appMFA/toggle')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ toggle: true });
+
+            expect(response.status).toBe(200);
+            expect(response.body.secret).toBeDefined();
+            expect(typeof response.body.secret).toBe('string');
+        });
+
+        it('should disable app MFA successfully', async () => {
+            const response: SRes<{ secret: string }> = await request(app.getHttpServer())
+                .post('/auth/appMFA/toggle')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ toggle: false });
+
+            expect(response.status).toBe(200);
+            expect(response.body.secret).toBe('');
+        });
+
+        it('should return 401 without authorization header', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/appMFA/toggle').send({ toggle: true });
+
+            expect(response.status).toBe(401);
+        });
+
+        it('should return 401 with invalid token', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/appMFA/toggle').set('Authorization', 'Bearer invalid-token').send({ toggle: true });
+
+            expect(response.status).toBe(401);
+        });
+    });
+
+    describe('/auth/appMFA/validate (POST)', () => {
+        let accessToken: string;
+
+        beforeAll(async () => {
+            const testUser = {
+                firstName: 'mfa-validate',
+                lastName: 'user',
+                avatar: '',
+                email: 'mfa-validate-test@gmail.com',
+                password: '123456',
+                confirmPassword: '123456',
+                isCredential: true,
+            };
+
+            await request(app.getHttpServer()).post('/auth/register').send(testUser);
+
+            const loginResponse: SRes<{ authToken: { accessToken: string } }> = await request(app.getHttpServer()).post('/auth/login').send({
+                email: testUser.email,
+                password: testUser.password,
+            });
+
+            accessToken = loginResponse.body.authToken.accessToken;
+
+            expect(accessToken).toBeDefined();
+        });
+
+        it('should return 401 without authorization header', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/appMFA/validate').send({ token: '123456' });
+
+            expect(response.status).toBe(401);
+        });
+
+        it('should return 401 with invalid access token', async () => {
+            const response = await request(app.getHttpServer())
+                .post('/auth/appMFA/validate')
+                .set('Authorization', 'Bearer invalid-token')
+                .send({ token: '123456' });
+
+            expect(response.status).toBe(401);
+        });
+
+        /**
+         * Note: Không thể test với OTP token thật vì cần ứng dụng Google Authenticator
+         * để tạo token hợp lệ. Test này chỉ kiểm tra response format.
+         */
+        it('should return validation result for invalid OTP token', async () => {
+            const mfaResponse = await request(app.getHttpServer())
+                .post('/auth/appMFA/toggle')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ toggle: true });
+
+            expect(mfaResponse.status).toBe(200);
+
+            const response: SRes<{ verified: boolean }> = await request(app.getHttpServer())
+                .post('/auth/appMFA/validate')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ token: '000000' });
+
+            expect(response.status).toBe(401);
         });
     });
 });

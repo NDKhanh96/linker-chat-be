@@ -73,8 +73,8 @@ export class Account {
     @OneToOne(() => RefreshToken, refreshToken => refreshToken.account)
     refreshToken: RefreshToken;
 
-    @Expose()
-    @OneToOne(() => VerifyToken, verifyToken => verifyToken.account)
+    @Exclude()
+    @OneToOne(() => VerifyToken, verifyToken => verifyToken.account, { cascade: true })
     verifyToken: VerifyToken;
 
     /**

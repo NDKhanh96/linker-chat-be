@@ -9,7 +9,7 @@ export class LoginJwtResDto {
     @Expose()
     @ValidateNested()
     @Type(() => AuthTokenDto)
-    authToken: AuthTokenDto;
+    authToken: AuthTokenDto | undefined;
 
     @ApiProperty()
     @Expose()
