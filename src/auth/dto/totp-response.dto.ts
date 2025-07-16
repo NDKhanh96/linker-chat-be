@@ -1,8 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class MfaSecretResponseDto {
+export class TotpSecretResponseDto {
     @ApiProperty({
-        description: 'The secret key for MFA setup (base32 encoded)',
+        description: 'The secret key for TOTP setup (base32 encoded)',
         // cspell:disable-next-line
         example: 'JBSWY3DPEHPK3PXP',
         type: String,
@@ -10,9 +10,9 @@ export class MfaSecretResponseDto {
     secret: string;
 }
 
-export class MfaValidationResponseDto {
+export class TotpValidationResponseDto {
     @ApiProperty({
-        description: 'Whether the MFA token is valid',
+        description: 'Whether the TOTP token is valid',
         example: true,
         type: Boolean,
     })

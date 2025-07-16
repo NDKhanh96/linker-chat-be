@@ -12,11 +12,11 @@ import { of } from 'rxjs';
 import type { EntityManager, FindOneOptions, Repository } from 'typeorm';
 
 import { AuthService } from '~/auth/auth.service';
-import { LoginJwtResDto } from '~/auth/dto';
+import { LoginCredentialResDto } from '~/auth/dto';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
 import type { QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 
-import { mockAccountRepository, mockDto, mockMfaData, mockRefreshTokenRepository, mockRequest } from '~/__mocks__';
+import { mockAccountRepository, mockDto, mockRefreshTokenRepository, mockRequest, mockTotpData } from '~/__mocks__';
 
 describe('AuthService', () => {
     let authService: AuthService;
@@ -111,8 +111,8 @@ describe('AuthService', () => {
                             if (options.where?.email === mockDto.register.req.existedEmail.email) {
                                 return mockAccountRepository.findOne.jwt;
                             }
-                            if (options.where?.id === mockAccountRepository.findOne.JWT_MFA_TRUE.id) {
-                                return mockAccountRepository.findOne.JWT_MFA_TRUE;
+                            if (options.where?.id === mockAccountRepository.findOne.JWT_TOTP_TRUE.id) {
+                                return mockAccountRepository.findOne.JWT_TOTP_TRUE;
                             }
 
                             return null;
@@ -351,14 +351,14 @@ describe('AuthService', () => {
 
             const result = await authService.googleLogin(body);
 
-            expect(result).toBeInstanceOf(LoginJwtResDto);
+            expect(result).toBeInstanceOf(LoginCredentialResDto);
             expect(result).toEqual({
                 authToken: {
                     accessToken: 'mock access token',
                     refreshToken: 'mock refresh token',
                 },
                 email: '20@gmail.com',
-                enableAppMfa: false,
+                enableTotp: false,
                 isCredential: false,
                 id: 19,
             });
@@ -402,12 +402,12 @@ describe('AuthService', () => {
         });
     });
 
-    describe('MFA Operations', () => {
-        describe('Method: enableAppMFA', () => {
-            it('should enable MFA and return new secret when MFA is disabled', async () => {
-                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockMfaData.validAccount);
+    describe('TOTP Operations', () => {
+        describe('Method: enableTotp', () => {
+            it('should enable TOTP and return new secret when TOTP is disabled', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.validAccount);
 
-                const result = await authService.enableAppMFA(1);
+                const result = await authService.enableTotp(1);
 
                 expect(result).toHaveProperty('secret');
                 expect(typeof result.secret).toBe('string');
@@ -417,60 +417,59 @@ describe('AuthService', () => {
             it('should throw UnauthorizedException when account not found', async () => {
                 jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
 
-                await expect(authService.enableAppMFA(999)).rejects.toThrow(UnauthorizedException);
+                await expect(authService.enableTotp(999)).rejects.toThrow(UnauthorizedException);
             });
         });
 
-        describe('Method: disableAppMFA', () => {
-            it('should disable MFA and return empty secret', async () => {
-                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockMfaData.enabledMfaAccount);
+        describe('Method: disableTotp', () => {
+            it('should disable TOTP and return empty secret', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.enabledTotpAccount);
 
-                const result = await authService.disableAppMFA(1);
+                const result = await authService.disableTotp(1);
 
                 expect(result).toEqual({ secret: '' });
             });
 
-            it('should throw UnprocessableEntityException when MFA is not enabled', async () => {
-                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockMfaData.disabledMfaAccount);
+            it('should throw UnprocessableEntityException when TOTP is not enabled', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.disabledTotpAccount);
 
-                await expect(authService.disableAppMFA(1)).rejects.toThrow(new UnprocessableEntityException('App MFA is not enabled'));
+                await expect(authService.disableTotp(1)).rejects.toThrow(new UnprocessableEntityException('TOTP is not enabled'));
             });
 
             it('should throw UnauthorizedException when account not found', async () => {
                 jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
 
-                await expect(authService.disableAppMFA(999)).rejects.toThrow(UnauthorizedException);
+                await expect(authService.disableTotp(999)).rejects.toThrow(UnauthorizedException);
             });
         });
 
-        describe('Method: validateAppMFAToken', () => {
+        describe('Method: validateTotpToken', () => {
             it('should return verified true when token is valid', async () => {
                 jest.spyOn(authService, 'validateEmailOtp').mockReturnValue(true);
 
-                const result = await authService.validateAppMFAToken(2, '123456');
+                const result = await authService.validateTotpToken(2, '123456');
 
                 expect(result).toEqual({ verified: true });
             });
 
             it('should return verified false when token is invalid', async () => {
-                // jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockMfaData.enabledMfaAccount);
                 jest.spyOn(authService, 'validateEmailOtp').mockReturnValue(false);
 
-                const result = await authService.validateAppMFAToken(2, '000000');
+                const result = await authService.validateTotpToken(2, '000000');
 
                 expect(result).toEqual({ verified: false });
             });
 
-            it('should throw UnprocessableEntityException when MFA is not enabled', async () => {
-                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockMfaData.disabledMfaAccount);
+            it('should throw UnprocessableEntityException when TOTP is not enabled', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.disabledTotpAccount);
 
-                await expect(authService.validateAppMFAToken(1, '123456')).rejects.toThrow(new UnprocessableEntityException('App MFA is not enabled'));
+                await expect(authService.validateTotpToken(1, '123456')).rejects.toThrow(new UnprocessableEntityException('TOTP is not enabled'));
             });
 
             it('should throw UnauthorizedException when account not found', async () => {
                 jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
 
-                await expect(authService.validateAppMFAToken(999, '123456')).rejects.toThrow(UnauthorizedException);
+                await expect(authService.validateTotpToken(999, '123456')).rejects.toThrow(UnauthorizedException);
             });
         });
     });

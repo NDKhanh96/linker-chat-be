@@ -1,9 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsBoolean } from 'class-validator';
 
-export class ToggleAppMfaDto {
+export class ToggleTotpDto {
     @ApiProperty({
-        description: 'Toggle authenticator app MFA on or off',
+        description: 'Toggle authenticator TOTP on or off',
         example: true,
         type: Boolean,
     })

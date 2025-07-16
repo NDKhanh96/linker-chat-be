@@ -34,7 +34,7 @@ export const mockDto = {
                         id: 19,
                         email: '20@gmail.com',
                         password: '$2b$10$BfpEs7RkIxOV5aZlcdKj5egaGEVKbNaUU7c1JBVbzxGCkBaO9E6lW',
-                        enableAppMfa: false,
+                        enableTotp: false,
                         isCredential: false,
                         refreshToken: undefined,
                         verifyToken: undefined,
@@ -61,7 +61,7 @@ export const mockDto = {
                     complete: {
                         id: 19,
                         email: '20@gmail.com',
-                        enableAppMfa: false,
+                        enableTotp: false,
                         isCredential: false,
                         user: {
                             id: 19,
@@ -81,7 +81,7 @@ export const mockDto = {
                     email: 'correctEmail@gmail.com',
                     password: mockUserInfo.correctPassword,
                 },
-                appMFAMethod: {
+                totpMethod: {
                     email: 'correctEmailAppMFA@gmail.com',
                     password: mockUserInfo.correctPassword,
                 },
@@ -101,33 +101,33 @@ export const mockDto = {
             jwt: {
                 authToken: { accessToken: 'mock access token', refreshToken: 'mock refresh token' },
                 email: 'existed@gmail.com',
-                enableAppMfa: false,
+                enableTotp: false,
                 isCredential: true,
                 id: 1,
             },
         },
     },
     user: {
-        disableAppMFA: {
+        disableTotp: {
             id: 1,
             firstName: 'Khanh',
             lastName: 'Nguyen',
             email: 'correctEmail@gmail.com',
             password: mockUserInfo.correctPassword,
             picture: 'picture',
-            enableAppMFA: false,
-            appMFASecret: 'secret',
+            enableTotp: false,
+            totpSecret: 'secret',
             isCredential: false,
         },
-        enableAppMFA: {
+        enableTotp: {
             id: 2,
             firstName: 'Khanh1',
             lastName: 'Nguyen1',
             email: 'correctEmailAppMFA@gmail.com',
             password: mockUserInfo.correctPassword,
             picture: 'picture',
-            enableAppMFA: true,
-            appMFASecret: 'secret',
+            enableTotp: true,
+            totpSecret: 'secret',
             isCredential: false,
         },
     },
@@ -171,11 +171,11 @@ export const mockResponse = {
         accessToken: 'mock access token',
         refreshToken: 'mock refresh token',
     },
-    loginAppMFA: {
-        message: 'Please login by validating the appMFA token.',
-        validateAppMFA: 'http://localhost:8080/auth/appMFA/validate',
+    loginTotp: {
+        message: 'Please login by validating the TOTP token.',
+        validateTotp: 'http://localhost:8080/auth/totp/validate',
     },
-    disableAppMFA: {
+    disableTotp: {
         generatedMaps: [],
         raw: [],
         affected: 1,
@@ -188,7 +188,7 @@ export const mockAccountRepository = {
             id: 1,
             email: 'existed@gmail.com',
             password: '123456',
-            enableAppMfa: false,
+            enableTotp: false,
             isCredential: true,
             refreshToken: undefined,
             verifyToken: undefined,
@@ -208,15 +208,15 @@ export const mockAccountRepository = {
             avatar: '',
             confirmPassword: '123456',
         },
-        JWT_MFA_TRUE: {
+        JWT_TOTP_TRUE: {
             id: 2,
             email: 'existed_mfa_true@gmail.com',
             password: '123456',
-            enableAppMfa: true,
+            enableTotp: true,
             isCredential: true,
             refreshToken: undefined,
             verifyToken: {
-                appMfaSecret: 'A',
+                totpSecret: 'A',
             },
             user: {
                 id: 1,
@@ -255,7 +255,7 @@ export const mockRefreshTokenRepository = {
                 email: '',
                 id: 1,
                 version: 1,
-                enableAppMfa: false,
+                enableTotp: false,
                 isCredential: false,
                 password: '123456',
                 createdAt: new Date(),
@@ -293,7 +293,7 @@ export const mockRefreshTokenRepository = {
                     email: '',
                     id: 1,
                     version: 1,
-                    enableAppMfa: false,
+                    enableTotp: false,
                     isCredential: false,
                     password: '123456',
                     createdAt: new Date(),
@@ -319,13 +319,13 @@ export const mockRefreshTokenRepository = {
     },
 };
 
-export const mockMfaData = {
+export const mockTotpData = {
     validAccount: {
         id: 1,
         version: 1,
         email: 'test@gmail.com',
         password: '$2b$10$BfpEs7RkIxOV5aZlcdKj5egaGEVKbNaUU7c1JBVbzxGCkBaO9E6lW',
-        enableAppMfa: false,
+        enableTotp: false,
         isCredential: true,
         isActive: true,
         createdAt: new Date(),
@@ -338,8 +338,8 @@ export const mockMfaData = {
         user: {} as User,
         verifyToken: {
             id: 1,
-            appMfaSecret: '',
-            mailMfaSecret: '',
+            totpSecret: '',
+            emailOtpSecret: '',
             forgotPasswordSecret: '',
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -351,12 +351,12 @@ export const mockMfaData = {
             account: {} as unknown as Account,
         },
     },
-    enabledMfaAccount: {
+    enabledTotpAccount: {
         id: 2,
         version: 1,
         email: 'mfa@gmail.com',
         password: '$2b$10$BfpEs7RkIxOV5aZlcdKj5egaGEVKbNaUU7c1JBVbzxGCkBaO9E6lW',
-        enableAppMfa: true,
+        enableTotp: true,
         isCredential: true,
         isActive: true,
         createdAt: new Date(),
@@ -370,8 +370,8 @@ export const mockMfaData = {
         verifyToken: {
             id: 2,
             // cspell:disable-next-line
-            appMfaSecret: 'JBSWY3DPEHPK3PXP',
-            mailMfaSecret: '',
+            totpSecret: 'JBSWY3DPEHPK3PXP',
+            emailOtpSecret: '',
             forgotPasswordSecret: '',
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -383,12 +383,12 @@ export const mockMfaData = {
             account: {} as unknown as Account,
         },
     },
-    disabledMfaAccount: {
+    disabledTotpAccount: {
         id: 3,
         version: 1,
         email: 'disabled-mfa@gmail.com',
         password: '$2b$10$BfpEs7RkIxOV5aZlcdKj5egaGEVKbNaUU7c1JBVbzxGCkBaO9E6lW',
-        enableAppMfa: false,
+        enableTotp: false,
         isCredential: true,
         isActive: true,
         createdAt: new Date(),
@@ -401,8 +401,8 @@ export const mockMfaData = {
         user: {} as User,
         verifyToken: {
             id: 3,
-            appMfaSecret: '',
-            mailMfaSecret: '',
+            totpSecret: '',
+            emailOtpSecret: '',
             forgotPasswordSecret: '',
             createdAt: new Date(),
             updatedAt: new Date(),

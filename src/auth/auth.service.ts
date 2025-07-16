@@ -15,7 +15,7 @@ import { MoreThanOrEqual, type Repository } from 'typeorm';
 import { v4 } from 'uuid';
 
 import type { AuthTokenDto, CreateAccountDto, LoginDto } from '~/auth/dto';
-import { GoogleLoginErrorDto, LoginJwtResDto } from '~/auth/dto';
+import { GoogleLoginErrorDto, LoginCredentialResDto } from '~/auth/dto';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
 import type { GoogleIdTokenDecoded, JwksResponse, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 import { User } from '~/user/entities';
@@ -90,7 +90,7 @@ export class AuthService {
         return plainToInstance(Account, savedAccount, { excludeExtraneousValues: true });
     }
 
-    async login(loginDTO: LoginDto): Promise<LoginJwtResDto> {
+    async login(loginDTO: LoginDto): Promise<LoginCredentialResDto> {
         const { email, password } = loginDTO;
         const account = await this.findAccountByEmail(email);
 
@@ -104,9 +104,9 @@ export class AuthService {
             throw new UnauthorizedException('Wrong email or password');
         }
 
-        const authToken: AuthTokenDto | undefined = account.enableAppMfa ? undefined : await this.generateAccountTokens(account.email, account.id);
+        const authToken: AuthTokenDto | undefined = account.enableTotp ? undefined : await this.generateAccountTokens(account.email, account.id);
 
-        return plainToInstance(LoginJwtResDto, { ...account, authToken }, { excludeExtraneousValues: true });
+        return plainToInstance(LoginCredentialResDto, { ...account, authToken }, { excludeExtraneousValues: true });
     }
 
     async refreshToken(refreshToken: string): Promise<AuthTokenDto> {
@@ -125,19 +125,19 @@ export class AuthService {
         return this.generateAccountTokens(token.account.email, token.account.id);
     }
 
-    async enableAppMFA(accountId: number): Promise<{ secret: string }> {
+    async enableTotp(accountId: number): Promise<{ secret: string }> {
         const account = await this.findAccountById(accountId);
 
-        if (account.enableAppMfa) {
-            return { secret: account.verifyToken.appMfaSecret };
+        if (account.enableTotp) {
+            return { secret: account.verifyToken.totpSecret };
         }
 
         const secret = new OTPAuth.Secret();
 
         const [error] = await this.accountRepository.manager
             .transaction(async transactionalEntityManager => {
-                account.enableAppMfa = true;
-                account.verifyToken.appMfaSecret = secret.base32;
+                account.enableTotp = true;
+                account.verifyToken.totpSecret = secret.base32;
 
                 await transactionalEntityManager.save(Account, account);
             })
@@ -150,17 +150,17 @@ export class AuthService {
         return { secret: secret.base32 };
     }
 
-    async disableAppMFA(accountId: number): Promise<{ secret: string }> {
+    async disableTotp(accountId: number): Promise<{ secret: string }> {
         const account = await this.findAccountById(accountId);
 
-        if (!account.enableAppMfa) {
-            throw new UnprocessableEntityException('App MFA is not enabled');
+        if (!account.enableTotp) {
+            throw new UnprocessableEntityException('TOTP is not enabled');
         }
 
         const [error] = await this.accountRepository.manager
             .transaction(async transactionalEntityManager => {
-                account.enableAppMfa = false;
-                account.verifyToken.appMfaSecret = '';
+                account.enableTotp = false;
+                account.verifyToken.totpSecret = '';
 
                 await transactionalEntityManager.save(Account, account);
             })
@@ -173,14 +173,14 @@ export class AuthService {
         return { secret: '' };
     }
 
-    async validateAppMFAToken(accountId: number, token: string): Promise<{ verified: boolean }> {
+    async validateTotpToken(accountId: number, token: string): Promise<{ verified: boolean }> {
         const account = await this.findAccountById(accountId);
 
-        if (!account.enableAppMfa || !account.verifyToken.appMfaSecret) {
-            throw new UnprocessableEntityException('App MFA is not enabled');
+        if (!account.enableTotp || !account.verifyToken.totpSecret) {
+            throw new UnprocessableEntityException('TOTP is not enabled');
         }
 
-        const verified = this.validateEmailOtp(token, OTPAuth.Secret.fromBase32(account.verifyToken.appMfaSecret), account.email);
+        const verified = this.validateEmailOtp(token, OTPAuth.Secret.fromBase32(account.verifyToken.totpSecret), account.email);
 
         return { verified };
     }
@@ -245,7 +245,7 @@ export class AuthService {
         return response.redirect(appScheme + '?' + outgoingParams.toString());
     }
 
-    async googleLogin(body: { code: string; codeVerifier: string }): Promise<LoginJwtResDto> {
+    async googleLogin(body: { code: string; codeVerifier: string }): Promise<LoginCredentialResDto> {
         const [error, userInfo] = await this.getGoogleUserInfo.bind(this).toSafeAsync(body);
 
         if (error instanceof AxiosError) {
@@ -275,7 +275,7 @@ export class AuthService {
 
         const authToken: AuthTokenDto = await this.generateAccountTokens(account.email, account.id);
 
-        return plainToInstance(LoginJwtResDto, { ...account, authToken }, { excludeExtraneousValues: true });
+        return plainToInstance(LoginCredentialResDto, { ...account, authToken }, { excludeExtraneousValues: true });
     }
 
     /**

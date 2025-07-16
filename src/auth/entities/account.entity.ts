@@ -31,8 +31,8 @@ export class Account {
     password: string;
 
     @Expose()
-    @Column({ name: 'enable_app_mfa', default: false, type: 'boolean' })
-    enableAppMfa: boolean;
+    @Column({ name: 'enable_totp', default: false, type: 'boolean' })
+    enableTotp: boolean;
 
     @Expose()
     @Column({ name: 'is_credential', default: true, type: 'boolean' })

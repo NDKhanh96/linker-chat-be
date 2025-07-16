@@ -2,7 +2,7 @@ export const mockResponseData = {
     register: {
         id: 17,
         email: '18@gmail.com',
-        enableAppMfa: false,
+        enableTotp: false,
         isCredential: false,
         user: {
             id: 17,
@@ -17,7 +17,7 @@ export const mockResponseData = {
             refreshToken: 'refresh-token',
         },
         email: '1@gmail.com',
-        enableAppMfa: false,
+        enableTotp: false,
         isCredential: false,
         id: 1,
     },
@@ -25,14 +25,14 @@ export const mockResponseData = {
         accessToken: 'new-access-token',
         refreshToken: 'new-refresh-token',
     },
-    enableAppMFA: {
+    enableTotp: {
         // cspell:disable-next-line
         secret: 'JBSWY3DPEHPK3PXP',
     },
-    disableAppMFA: {
+    disableTotp: {
         secret: '',
     },
-    validateAppMFA: {
+    validateTotp: {
         verified: true,
     },
 };

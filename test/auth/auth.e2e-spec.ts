@@ -19,7 +19,7 @@ import { mockDto } from '~/__mocks__';
 
 /**
  * - Google OAuth 2.0 không thể test được vì cần phải vào trình duyệt để xác thực.
- * - validateAppMFAToken() không thể test được vì cần lấy OTP từ ứng dụng google authenticator.
+ * - validateTotpToken() không thể test được vì cần lấy OTP từ ứng dụng google authenticator.
  */
 describe('Auth', (): void => {
     let app: INestApplication<Server>;
@@ -57,7 +57,7 @@ describe('Auth', (): void => {
 
         expect(response.status).toBe(201);
         expect(response.body.email).toEqual(userDto.email);
-        expect(response.body.enableAppMfa).toEqual(false);
+        expect(response.body.enableTotp).toEqual(false);
         expect(response.body.isCredential).toEqual(userDto.isCredential);
         expect(response.body.user.avatar).toBe(userDto.avatar);
         expect(response.body.user.firstName).toBe(userDto.firstName);
@@ -178,7 +178,7 @@ describe('Auth', (): void => {
         });
     });
 
-    describe('/auth/appMFA/toggle (POST)', () => {
+    describe('/auth/totp/toggle (POST)', () => {
         let accessToken: string;
 
         beforeAll(async () => {
@@ -202,9 +202,9 @@ describe('Auth', (): void => {
             accessToken = loginResponse.body.authToken.accessToken;
         });
 
-        it('should enable app MFA successfully', async () => {
+        it('should enable TOTP successfully', async () => {
             const response: SRes<{ secret: string }> = await request(app.getHttpServer())
-                .post('/auth/appMFA/toggle')
+                .post('/auth/totp/toggle')
                 .set('Authorization', `Bearer ${accessToken}`)
                 .send({ toggle: true });
 
@@ -214,9 +214,9 @@ describe('Auth', (): void => {
             expect(response.body.secret.length).toBeGreaterThan(0);
         });
 
-        it('should return same secret when MFA is already enabled', async () => {
+        it('should return same secret when TOTP is already enabled', async () => {
             const response: SRes<{ secret: string }> = await request(app.getHttpServer())
-                .post('/auth/appMFA/toggle')
+                .post('/auth/totp/toggle')
                 .set('Authorization', `Bearer ${accessToken}`)
                 .send({ toggle: true });
 
@@ -225,9 +225,9 @@ describe('Auth', (): void => {
             expect(typeof response.body.secret).toBe('string');
         });
 
-        it('should disable app MFA successfully', async () => {
+        it('should disable app TOTP successfully', async () => {
             const response: SRes<{ secret: string }> = await request(app.getHttpServer())
-                .post('/auth/appMFA/toggle')
+                .post('/auth/totp/toggle')
                 .set('Authorization', `Bearer ${accessToken}`)
                 .send({ toggle: false });
 
@@ -236,19 +236,19 @@ describe('Auth', (): void => {
         });
 
         it('should return 401 without authorization header', async () => {
-            const response = await request(app.getHttpServer()).post('/auth/appMFA/toggle').send({ toggle: true });
+            const response = await request(app.getHttpServer()).post('/auth/totp/toggle').send({ toggle: true });
 
             expect(response.status).toBe(401);
         });
 
         it('should return 401 with invalid token', async () => {
-            const response = await request(app.getHttpServer()).post('/auth/appMFA/toggle').set('Authorization', 'Bearer invalid-token').send({ toggle: true });
+            const response = await request(app.getHttpServer()).post('/auth/totp/toggle').set('Authorization', 'Bearer invalid-token').send({ toggle: true });
 
             expect(response.status).toBe(401);
         });
     });
 
-    describe('/auth/appMFA/validate (POST)', () => {
+    describe('/auth/totp/validate (POST)', () => {
         let accessToken: string;
 
         beforeAll(async () => {
@@ -275,14 +275,14 @@ describe('Auth', (): void => {
         });
 
         it('should return 401 without authorization header', async () => {
-            const response = await request(app.getHttpServer()).post('/auth/appMFA/validate').send({ token: '123456' });
+            const response = await request(app.getHttpServer()).post('/auth/totp/validate').send({ token: '123456' });
 
             expect(response.status).toBe(401);
         });
 
         it('should return 401 with invalid access token', async () => {
             const response = await request(app.getHttpServer())
-                .post('/auth/appMFA/validate')
+                .post('/auth/totp/validate')
                 .set('Authorization', 'Bearer invalid-token')
                 .send({ token: '123456' });
 
@@ -294,15 +294,15 @@ describe('Auth', (): void => {
          * để tạo token hợp lệ. Test này chỉ kiểm tra response format.
          */
         it('should return validation result for invalid OTP token', async () => {
-            const mfaResponse = await request(app.getHttpServer())
-                .post('/auth/appMFA/toggle')
+            const totpResponse = await request(app.getHttpServer())
+                .post('/auth/totp/toggle')
                 .set('Authorization', `Bearer ${accessToken}`)
                 .send({ toggle: true });
 
-            expect(mfaResponse.status).toBe(200);
+            expect(totpResponse.status).toBe(200);
 
             const response: SRes<{ verified: boolean }> = await request(app.getHttpServer())
-                .post('/auth/appMFA/validate')
+                .post('/auth/totp/validate')
                 .set('Authorization', `Bearer ${accessToken}`)
                 .send({ token: '000000' });
 

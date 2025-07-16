@@ -14,12 +14,12 @@ export class VerifyToken {
     forgotPasswordSecret: string;
 
     @Expose()
-    @Column({ name: 'mail_mfa_secret', default: '' })
-    mailMfaSecret: string;
+    @Column({ name: 'email_otp_secret', default: '' })
+    emailOtpSecret: string;
 
     @Expose()
-    @Column({ name: 'app_mfa_secret', default: '' })
-    appMfaSecret: string;
+    @Column({ name: 'totp_secret', default: '' })
+    totpSecret: string;
 
     @Expose()
     @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })

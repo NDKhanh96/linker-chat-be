@@ -6,13 +6,13 @@ import { type Response } from 'express';
 import { AuthService } from '~/auth/auth.service';
 import {
     CreateAccountDto,
+    LoginCredentialResDto,
     LoginDto,
-    LoginJwtResDto,
-    MfaSecretResponseDto,
-    MfaValidationResponseDto,
     RefreshTokenDto,
-    ToggleAppMfaDto,
-    ValidateTokenDTO,
+    ToggleTotpDto,
+    TotpSecretResponseDto,
+    TotpValidationResponseDto,
+    ValidateTotpTokenDTO,
     type AuthTokenDto,
 } from '~/auth/dto';
 import type { Account } from '~/auth/entities';
@@ -38,9 +38,9 @@ export class AuthController {
     @HttpCode(200)
     @ApiBody({ type: LoginDto })
     @ApiOperation({ summary: 'User login' })
-    @ApiResponseOneOf({ status: 200, description: 'Login response', models: [LoginJwtResDto] })
+    @ApiResponseOneOf({ status: 200, description: 'Login response', models: [LoginCredentialResDto] })
     @ApiResponse({ status: 401, description: 'Unauthorized' })
-    async login(@Body() loginDTO: LoginDto): Promise<LoginJwtResDto> {
+    async login(@Body() loginDTO: LoginDto): Promise<LoginCredentialResDto> {
         return await this.authService.login(loginDTO);
     }
 
@@ -54,28 +54,28 @@ export class AuthController {
         return this.authService.refreshToken(refreshTokenDto.refreshToken);
     }
 
-    @Post('appMFA/toggle')
+    @Post('totp/toggle')
     @HttpCode(200)
     @UseGuards(AuthGuard('jwt'))
     @ApiBearerAuth()
-    @ApiBody({ type: ToggleAppMfaDto })
+    @ApiBody({ type: ToggleTotpDto })
     @ApiOperation({ summary: 'Toggle authenticator app on or off' })
-    @ApiResponse({ status: 200, description: 'Toggle 2 factor authentication successful', type: MfaSecretResponseDto })
+    @ApiResponse({ status: 200, description: 'Toggle 2 factor authentication successful', type: TotpSecretResponseDto })
     @ApiResponse({ status: 401, description: 'Unauthorized' })
-    toggleAppMFA(@Req() req: Express.AuthenticatedRequest, @Body() body: ToggleAppMfaDto): Promise<MfaSecretResponseDto> {
-        return body.toggle ? this.authService.enableAppMFA(req.user.id) : this.authService.disableAppMFA(req.user.id);
+    toggleTotp(@Req() req: Express.AuthenticatedRequest, @Body() body: ToggleTotpDto): Promise<TotpSecretResponseDto> {
+        return body.toggle ? this.authService.enableTotp(req.user.id) : this.authService.disableTotp(req.user.id);
     }
 
-    @Post('appMFA/validate')
+    @Post('totp/validate')
     @UseGuards(AuthGuard('jwt'))
     @HttpCode(200)
     @ApiBearerAuth()
-    @ApiBody({ type: ValidateTokenDTO })
-    @ApiOperation({ summary: 'Validate appMFA by code in authenticator app' })
-    @ApiResponse({ status: 200, description: 'Validate 2 factor authentication successful', type: MfaValidationResponseDto })
+    @ApiBody({ type: ValidateTotpTokenDTO })
+    @ApiOperation({ summary: 'Validate totp by code in authenticator app' })
+    @ApiResponse({ status: 200, description: 'Validate 2 factor authentication successful', type: TotpValidationResponseDto })
     @ApiResponse({ status: 401, description: 'Unauthorized' })
-    validateAppMFAToken(@Req() req: Express.AuthenticatedRequest, @Body() validateTokenDTO: ValidateTokenDTO): Promise<MfaValidationResponseDto> {
-        return this.authService.validateAppMFAToken(req.user.id, validateTokenDTO.token);
+    validateTotpToken(@Req() req: Express.AuthenticatedRequest, @Body() validateTokenDTO: ValidateTotpTokenDTO): Promise<TotpValidationResponseDto> {
+        return this.authService.validateTotpToken(req.user.id, validateTokenDTO.token);
     }
 
     @Get('social/login')
@@ -92,7 +92,7 @@ export class AuthController {
 
     @Post('google/login')
     @ApiExcludeEndpoint()
-    async googleLogin(@Body() body: { code: string; codeVerifier: string }): Promise<LoginJwtResDto> {
+    async googleLogin(@Body() body: { code: string; codeVerifier: string }): Promise<LoginCredentialResDto> {
         return this.authService.googleLogin(body);
     }
 }

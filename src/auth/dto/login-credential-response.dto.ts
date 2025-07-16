@@ -4,7 +4,7 @@ import { IsBoolean, IsNotEmpty, IsNumber, IsString, ValidateNested } from 'class
 
 import { AuthTokenDto } from '~/auth/dto';
 
-export class LoginJwtResDto {
+export class LoginCredentialResDto {
     @ApiProperty({ type: AuthTokenDto })
     @Expose()
     @ValidateNested()
@@ -21,7 +21,7 @@ export class LoginJwtResDto {
     @Expose()
     @IsBoolean()
     @IsNotEmpty()
-    enableAppMfa: boolean;
+    enableTotp: boolean;
 
     @ApiProperty()
     @Expose()
