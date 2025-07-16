@@ -214,15 +214,14 @@ describe('Auth', (): void => {
             expect(response.body.secret.length).toBeGreaterThan(0);
         });
 
-        it('should return same secret when TOTP is already enabled', async () => {
-            const response: SRes<{ secret: string }> = await request(app.getHttpServer())
+        it('should throw UnprocessableEntityException when TOTP is already enabled', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
                 .post('/auth/totp/toggle')
                 .set('Authorization', `Bearer ${accessToken}`)
                 .send({ toggle: true });
 
-            expect(response.status).toBe(200);
-            expect(response.body.secret).toBeDefined();
-            expect(typeof response.body.secret).toBe('string');
+            expect(response.status).toBe(422);
+            expect(response.body.message).toBe('TOTP is already enabled');
         });
 
         it('should disable app TOTP successfully', async () => {

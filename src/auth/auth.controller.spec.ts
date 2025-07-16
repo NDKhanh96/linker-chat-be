@@ -49,8 +49,9 @@ describe('AuthController', () => {
                         register: jest.fn().mockResolvedValue(mockResponseData.register),
                         login: jest.fn().mockResolvedValue(mockResponseData.login),
                         refreshToken: jest.fn().mockResolvedValue(mockResponseData.refreshToken),
-                        enableTotp: jest.fn().mockResolvedValue(mockResponseData.enableTotp),
-                        disableTotp: jest.fn().mockResolvedValue(mockResponseData.disableTotp),
+                        toggleTotp: jest
+                            .fn()
+                            .mockImplementation((accountId: number, enable: boolean) => (enable ? mockResponseData.enableTotp : mockResponseData.disableTotp)),
                         validateTotpToken: jest.fn().mockResolvedValue(mockResponseData.validateTotp),
                         socialLogin: jest.fn(),
                         googleCallback: jest.fn(),
@@ -155,22 +156,22 @@ describe('AuthController', () => {
 
         it('should enable TOTP and return secret', async (): Promise<void> => {
             const toggleDto: ToggleTotpDto = { toggle: true };
-            const spy = jest.spyOn(authService, 'enableTotp');
+            const spy = jest.spyOn(authService, 'toggleTotp');
 
             const response: TotpSecretResponseDto = await controller.toggleTotp(mockAuthenticatedRequest, toggleDto);
 
             expect(response).toEqual(mockResponseData.enableTotp);
-            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id);
+            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, true);
         });
 
         it('should disable TOTP and return empty secret', async (): Promise<void> => {
             const toggleDto: ToggleTotpDto = { toggle: false };
-            const spy = jest.spyOn(authService, 'disableTotp');
+            const spy = jest.spyOn(authService, 'toggleTotp');
 
             const response: TotpSecretResponseDto = await controller.toggleTotp(mockAuthenticatedRequest, toggleDto);
 
             expect(response).toEqual(mockResponseData.disableTotp);
-            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id);
+            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, false);
         });
 
         it('should validate TOTP token and return verification result', async (): Promise<void> => {
@@ -181,25 +182,6 @@ describe('AuthController', () => {
 
             expect(response).toEqual(mockResponseData.validateTotp);
             expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, validateTokenDto.token);
-        });
-
-        it('should handle toggle TOTP based on boolean value', async (): Promise<void> => {
-            const enableSpy = jest.spyOn(authService, 'enableTotp');
-            const disableSpy = jest.spyOn(authService, 'disableTotp');
-
-            // Test enable case
-            await controller.toggleTotp(mockAuthenticatedRequest, { toggle: true });
-            expect(enableSpy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id);
-            expect(disableSpy).not.toHaveBeenCalled();
-
-            // Reset spies
-            enableSpy.mockClear();
-            disableSpy.mockClear();
-
-            // Test disable case
-            await controller.toggleTotp(mockAuthenticatedRequest, { toggle: false });
-            expect(disableSpy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id);
-            expect(enableSpy).not.toHaveBeenCalled();
         });
 
         it('should pass correct parameters to validate TOTP token service', async (): Promise<void> => {

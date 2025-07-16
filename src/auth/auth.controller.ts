@@ -63,7 +63,7 @@ export class AuthController {
     @ApiResponse({ status: 200, description: 'Toggle 2 factor authentication successful', type: TotpSecretResponseDto })
     @ApiResponse({ status: 401, description: 'Unauthorized' })
     toggleTotp(@Req() req: Express.AuthenticatedRequest, @Body() body: ToggleTotpDto): Promise<TotpSecretResponseDto> {
-        return body.toggle ? this.authService.enableTotp(req.user.id) : this.authService.disableTotp(req.user.id);
+        return this.authService.toggleTotp(req.user.id, body.toggle);
     }
 
     @Post('totp/validate')

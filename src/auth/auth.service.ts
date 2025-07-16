@@ -125,19 +125,19 @@ export class AuthService {
         return this.generateAccountTokens(token.account.email, token.account.id);
     }
 
-    async enableTotp(accountId: number): Promise<{ secret: string }> {
+    async toggleTotp(accountId: number, enable: boolean): Promise<{ secret: string }> {
         const account = await this.findAccountById(accountId);
 
-        if (account.enableTotp) {
-            return { secret: account.verifyToken.totpSecret };
+        if (account.enableTotp === enable) {
+            throw new UnprocessableEntityException(`TOTP is already ${enable ? 'enabled' : 'disabled'}`);
         }
 
-        const secret = new OTPAuth.Secret();
+        const secret = enable ? new OTPAuth.Secret().base32 : '';
 
         const [error] = await this.accountRepository.manager
             .transaction(async transactionalEntityManager => {
-                account.enableTotp = true;
-                account.verifyToken.totpSecret = secret.base32;
+                account.enableTotp = enable;
+                account.verifyToken.totpSecret = secret;
 
                 await transactionalEntityManager.save(Account, account);
             })
@@ -147,30 +147,7 @@ export class AuthService {
             throw new ServiceUnavailableException(error.message, error.stack);
         }
 
-        return { secret: secret.base32 };
-    }
-
-    async disableTotp(accountId: number): Promise<{ secret: string }> {
-        const account = await this.findAccountById(accountId);
-
-        if (!account.enableTotp) {
-            throw new UnprocessableEntityException('TOTP is not enabled');
-        }
-
-        const [error] = await this.accountRepository.manager
-            .transaction(async transactionalEntityManager => {
-                account.enableTotp = false;
-                account.verifyToken.totpSecret = '';
-
-                await transactionalEntityManager.save(Account, account);
-            })
-            .toSafe();
-
-        if (error) {
-            throw new ServiceUnavailableException(error.message, error.stack);
-        }
-
-        return { secret: '' };
+        return { secret };
     }
 
     async validateTotpToken(accountId: number, token: string): Promise<{ verified: boolean }> {

@@ -407,7 +407,7 @@ describe('AuthService', () => {
             it('should enable TOTP and return new secret when TOTP is disabled', async () => {
                 jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.validAccount);
 
-                const result = await authService.enableTotp(1);
+                const result = await authService.toggleTotp(1, true);
 
                 expect(result).toHaveProperty('secret');
                 expect(typeof result.secret).toBe('string');
@@ -417,7 +417,7 @@ describe('AuthService', () => {
             it('should throw UnauthorizedException when account not found', async () => {
                 jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
 
-                await expect(authService.enableTotp(999)).rejects.toThrow(UnauthorizedException);
+                await expect(authService.toggleTotp(999, true)).rejects.toThrow(UnauthorizedException);
             });
         });
 
@@ -425,7 +425,7 @@ describe('AuthService', () => {
             it('should disable TOTP and return empty secret', async () => {
                 jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.enabledTotpAccount);
 
-                const result = await authService.disableTotp(1);
+                const result = await authService.toggleTotp(1, false);
 
                 expect(result).toEqual({ secret: '' });
             });
@@ -433,13 +433,13 @@ describe('AuthService', () => {
             it('should throw UnprocessableEntityException when TOTP is not enabled', async () => {
                 jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.disabledTotpAccount);
 
-                await expect(authService.disableTotp(1)).rejects.toThrow(new UnprocessableEntityException('TOTP is not enabled'));
+                await expect(authService.toggleTotp(1, false)).rejects.toThrow(new UnprocessableEntityException('TOTP is already disabled'));
             });
 
             it('should throw UnauthorizedException when account not found', async () => {
                 jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
 
-                await expect(authService.disableTotp(999)).rejects.toThrow(UnauthorizedException);
+                await expect(authService.toggleTotp(999, false)).rejects.toThrow(UnauthorizedException);
             });
         });
 
