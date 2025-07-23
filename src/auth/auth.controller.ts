@@ -5,6 +5,7 @@ import { type Response } from 'express';
 
 import { AuthService } from '~/auth/auth.service';
 import {
+    AuthTokenDto,
     CreateAccountDto,
     LoginCredentialResDto,
     LoginDto,
@@ -13,9 +14,8 @@ import {
     TotpSecretResponseDto,
     TotpValidationResponseDto,
     ValidateTotpTokenDTO,
-    type AuthTokenDto,
 } from '~/auth/dto';
-import type { Account } from '~/auth/entities';
+import { Account } from '~/auth/entities';
 import type { QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 import { ApiResponseOneOf } from '~utils/decorator';
 
@@ -28,7 +28,7 @@ export class AuthController {
     @Post('register')
     @ApiBody({ type: CreateAccountDto })
     @ApiOperation({ summary: 'User register' })
-    @ApiResponse({ status: 201, description: 'Signup successful' })
+    @ApiResponse({ status: 201, description: 'Signup successful', type: Account })
     @ApiResponse({ status: 401, description: 'Signup failed' })
     async register(@Body() body: CreateAccountDto): Promise<Account> {
         return await this.authService.register(body);
@@ -48,7 +48,7 @@ export class AuthController {
     @HttpCode(200)
     @ApiBody({ type: RefreshTokenDto })
     @ApiOperation({ summary: 'Generate new token by refresh token' })
-    @ApiResponse({ status: 200, description: 'Refresh token successful' })
+    @ApiResponse({ status: 200, description: 'Refresh token successful', type: AuthTokenDto })
     @ApiResponse({ status: 401, description: 'Unauthorized' })
     async refreshToken(@Body() refreshTokenDto: RefreshTokenDto): Promise<AuthTokenDto> {
         return this.authService.refreshToken(refreshTokenDto.refreshToken);
@@ -70,7 +70,6 @@ export class AuthController {
     @UseGuards(AuthGuard('jwt'))
     @HttpCode(200)
     @ApiBearerAuth()
-    @ApiBody({ type: ValidateTotpTokenDTO })
     @ApiOperation({ summary: 'Validate totp by code in authenticator app' })
     @ApiResponse({ status: 200, description: 'Validate 2 factor authentication successful', type: TotpValidationResponseDto })
     @ApiResponse({ status: 401, description: 'Unauthorized' })
