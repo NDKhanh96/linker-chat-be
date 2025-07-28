@@ -1,3 +1,5 @@
+import type { Request } from 'express';
+
 export type JwtPayload = {
     email: string;
     sub: number;
@@ -44,4 +46,8 @@ export type GoogleIdTokenDecoded = {
         exp: number;
     };
     signature: string;
+};
+
+type AuthenticatedMockRequest = Request & {
+    user: Express.User;
 };

@@ -5,15 +5,19 @@ import { AuthController } from '~/auth/auth.controller';
 import { AuthService } from '~/auth/auth.service';
 import type {
     AuthTokenDto,
+    EmailOtpResponseDto,
+    EmailOtpValidationResponseDto,
     LoginCredentialResDto,
     RefreshTokenDto,
+    SendEmailOtpDto,
     ToggleTotpDto,
     TotpSecretResponseDto,
     TotpValidationResponseDto,
+    ValidateEmailOtpDto,
     ValidateTotpTokenDTO,
 } from '~/auth/dto';
 import type { Account } from '~/auth/entities';
-import type { QueryGoogleAuth, QueryGoogleCallback } from '~/types';
+import type { AuthenticatedMockRequest, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 
 import { mockDto, mockResponseData } from '~/__mocks__';
 
@@ -53,6 +57,12 @@ describe('AuthController', () => {
                             .fn()
                             .mockImplementation((accountId: number, enable: boolean) => (enable ? mockResponseData.enableTotp : mockResponseData.disableTotp)),
                         validateTotpToken: jest.fn().mockResolvedValue(mockResponseData.validateTotp),
+                        toggleEmailOtp: jest
+                            .fn()
+                            .mockImplementation((accountId: number, enable: boolean) =>
+                                Promise.resolve({ message: enable ? 'OTP sent to email successfully' : 'Email OTP disabled successfully' }),
+                            ),
+                        validateEmailOtpToken: jest.fn().mockResolvedValue({ verified: true }),
                         socialLogin: jest.fn(),
                         googleCallback: jest.fn(),
                         googleLogin: jest.fn(),
@@ -150,9 +160,12 @@ describe('AuthController', () => {
     });
 
     describe('TOTP Operations', () => {
-        const mockAuthenticatedRequest = {
-            user: { id: 1 },
-        } as Express.AuthenticatedRequest;
+        const mockAuthenticatedRequest = httpMocks.createRequest<AuthenticatedMockRequest>({
+            method: 'POST',
+            user: {
+                id: 123,
+            },
+        });
 
         it('should enable TOTP and return secret', async (): Promise<void> => {
             const toggleDto: ToggleTotpDto = { toggle: true };
@@ -182,6 +195,61 @@ describe('AuthController', () => {
 
             expect(response).toEqual(mockResponseData.validateTotp);
             expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, validateTokenDto.token);
+        });
+    });
+
+    describe('Email OTP Operations', () => {
+        const mockAuthenticatedRequest = httpMocks.createRequest<AuthenticatedMockRequest>({
+            user: {
+                id: 123,
+            },
+        });
+
+        it('should send email OTP and return success message', async (): Promise<void> => {
+            const sendOtpDto: SendEmailOtpDto = { enable: true };
+            const spy = jest.spyOn(authService, 'toggleEmailOtp');
+
+            const response: EmailOtpResponseDto = await controller.toggleEmailOtp(mockAuthenticatedRequest, sendOtpDto);
+
+            expect(response).toEqual({ message: 'OTP sent to email successfully' });
+            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, true);
+        });
+
+        it('should disable email OTP and return success message', async (): Promise<void> => {
+            const sendOtpDto: SendEmailOtpDto = { enable: false };
+            const spy = jest.spyOn(authService, 'toggleEmailOtp');
+
+            const response: EmailOtpResponseDto = await controller.toggleEmailOtp(mockAuthenticatedRequest, sendOtpDto);
+
+            expect(response).toEqual({ message: 'Email OTP disabled successfully' });
+            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, false);
+        });
+
+        it('should validate email OTP token and return verification result', async (): Promise<void> => {
+            const validateOtpDto: ValidateEmailOtpDto = { token: '123456' };
+            const spy = jest.spyOn(authService, 'validateEmailOtpToken');
+
+            const response: EmailOtpValidationResponseDto = await controller.validateEmailOtp(mockAuthenticatedRequest, validateOtpDto);
+
+            expect(response).toEqual({ verified: true });
+            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, validateOtpDto.token);
+        });
+
+        it('should pass correct parameters to validate email OTP service', async (): Promise<void> => {
+            const validateOtpDto: ValidateEmailOtpDto = { token: '654321' };
+            const spy = jest.spyOn(authService, 'validateEmailOtpToken');
+
+            await controller.validateEmailOtp(mockAuthenticatedRequest, validateOtpDto);
+
+            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, validateOtpDto.token);
+        });
+    });
+
+    describe('TOTP Operations (continued)', () => {
+        const mockAuthenticatedRequest = httpMocks.createRequest<AuthenticatedMockRequest>({
+            user: {
+                id: 1,
+            },
         });
 
         it('should pass correct parameters to validate TOTP token service', async (): Promise<void> => {

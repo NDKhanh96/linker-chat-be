@@ -42,6 +42,11 @@ export class Account {
 
     @ApiProperty()
     @Expose()
+    @Column({ name: 'enable_email_otp', default: false, type: 'boolean' })
+    enableEmailOtp: boolean;
+
+    @ApiProperty()
+    @Expose()
     @Column({ name: 'is_credential', default: true, type: 'boolean' })
     isCredential: boolean;
 

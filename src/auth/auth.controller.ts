@@ -7,12 +7,16 @@ import { AuthService } from '~/auth/auth.service';
 import {
     AuthTokenDto,
     CreateAccountDto,
+    EmailOtpResponseDto,
+    EmailOtpValidationResponseDto,
     LoginCredentialResDto,
     LoginDto,
     RefreshTokenDto,
+    SendEmailOtpDto,
     ToggleTotpDto,
     TotpSecretResponseDto,
     TotpValidationResponseDto,
+    ValidateEmailOtpDto,
     ValidateTotpTokenDTO,
 } from '~/auth/dto';
 import { Account } from '~/auth/entities';
@@ -75,6 +79,30 @@ export class AuthController {
     @ApiResponse({ status: 401, description: 'Unauthorized' })
     validateTotpToken(@Req() req: Express.AuthenticatedRequest, @Body() validateTokenDTO: ValidateTotpTokenDTO): Promise<TotpValidationResponseDto> {
         return this.authService.validateTotpToken(req.user.id, validateTokenDTO.token);
+    }
+
+    @Post('email-otp/toggle')
+    @UseGuards(AuthGuard('jwt'))
+    @HttpCode(200)
+    @ApiBearerAuth()
+    @ApiBody({ type: SendEmailOtpDto })
+    @ApiOperation({ summary: 'Send OTP to email or disable email OTP' })
+    @ApiResponse({ status: 200, description: 'Email OTP operation successful', type: EmailOtpResponseDto })
+    @ApiResponse({ status: 401, description: 'Unauthorized' })
+    toggleEmailOtp(@Req() req: Express.AuthenticatedRequest, @Body() body: SendEmailOtpDto): Promise<EmailOtpResponseDto> {
+        return this.authService.toggleEmailOtp(req.user.id, body.enable);
+    }
+
+    @Post('email-otp/validate')
+    @UseGuards(AuthGuard('jwt'))
+    @HttpCode(200)
+    @ApiBearerAuth()
+    @ApiBody({ type: ValidateEmailOtpDto })
+    @ApiOperation({ summary: 'Validate OTP code sent to email' })
+    @ApiResponse({ status: 200, description: 'Email OTP validation successful', type: EmailOtpValidationResponseDto })
+    @ApiResponse({ status: 401, description: 'Unauthorized' })
+    validateEmailOtp(@Req() req: Express.AuthenticatedRequest, @Body() validateOtpDto: ValidateEmailOtpDto): Promise<EmailOtpValidationResponseDto> {
+        return this.authService.validateEmailOtpToken(req.user.id, validateOtpDto.token);
     }
 
     @Get('social/login')

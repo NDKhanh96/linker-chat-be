@@ -27,6 +27,12 @@ export class LoginCredentialResDto {
     @Expose()
     @IsBoolean()
     @IsNotEmpty()
+    enableEmailOtp: boolean;
+
+    @ApiProperty()
+    @Expose()
+    @IsBoolean()
+    @IsNotEmpty()
     isCredential: boolean;
 
     @ApiProperty()

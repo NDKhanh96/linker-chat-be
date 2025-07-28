@@ -23,6 +23,7 @@ describe('AuthService', () => {
     let configService: ConfigService;
     let jwtService: JwtService;
     let httpService: HttpService;
+    let mailerService: MailerService;
     let accountRepository: Repository<Account>;
     let refreshTokenRepository: Repository<RefreshToken>;
     let verifyTokenRepository: Repository<VerifyToken>;
@@ -164,7 +165,9 @@ describe('AuthService', () => {
                 },
                 {
                     provide: getRepositoryToken(VerifyToken),
-                    useValue: {},
+                    useValue: {
+                        update: jest.fn().mockResolvedValue({ affected: 1, raw: {}, generatedMaps: [] }),
+                    },
                 },
                 {
                     provide: MailerService,
@@ -179,6 +182,7 @@ describe('AuthService', () => {
         configService = module.get<ConfigService>(ConfigService);
         jwtService = module.get<JwtService>(JwtService);
         httpService = module.get<HttpService>(HttpService);
+        mailerService = module.get<MailerService>(MailerService);
         accountRepository = module.get<Repository<Account>>(getRepositoryToken(Account));
         refreshTokenRepository = module.get<Repository<RefreshToken>>(getRepositoryToken(RefreshToken));
         verifyTokenRepository = module.get<Repository<VerifyToken>>(getRepositoryToken(VerifyToken));
@@ -189,6 +193,7 @@ describe('AuthService', () => {
         expect(configService).toBeDefined();
         expect(jwtService).toBeDefined();
         expect(httpService).toBeDefined();
+        expect(mailerService).toBeDefined();
         expect(accountRepository).toBeDefined();
         expect(refreshTokenRepository).toBeDefined();
         expect(verifyTokenRepository).toBeDefined();
@@ -445,7 +450,7 @@ describe('AuthService', () => {
 
         describe('Method: validateTotpToken', () => {
             it('should return verified true when token is valid', async () => {
-                jest.spyOn(authService, 'validateEmailOtp').mockReturnValue(true);
+                jest.spyOn(authService, 'handleVerifyOtp').mockReturnValue(true);
 
                 const result = await authService.validateTotpToken(2, '123456');
 
@@ -453,7 +458,7 @@ describe('AuthService', () => {
             });
 
             it('should return verified false when token is invalid', async () => {
-                jest.spyOn(authService, 'validateEmailOtp').mockReturnValue(false);
+                jest.spyOn(authService, 'handleVerifyOtp').mockReturnValue(false);
 
                 const result = await authService.validateTotpToken(2, '000000');
 
@@ -470,6 +475,146 @@ describe('AuthService', () => {
                 jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
 
                 await expect(authService.validateTotpToken(999, '123456')).rejects.toThrow(UnauthorizedException);
+            });
+        });
+    });
+
+    describe('Email OTP Operations', () => {
+        describe('Method: toggleEmailOtp', () => {
+            it('should enable email OTP and send OTP email successfully', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.validAccount);
+
+                const handleToggleEmailOtpSpy = jest.spyOn(authService, 'handleToggleEmailOtp').mockResolvedValue();
+                const generateEmailOtpSpy = jest.fn().mockReturnValue('123456');
+                const sendOtpEmailSpy = jest.fn().mockResolvedValue(undefined);
+
+                Reflect.set(authService, 'generateEmailOtp', generateEmailOtpSpy);
+                Reflect.set(authService, 'sendOtpEmail', sendOtpEmailSpy);
+
+                const result = await authService.toggleEmailOtp(1, true);
+
+                expect(result).toEqual({ message: 'OTP sent to email successfully' });
+                expect(handleToggleEmailOtpSpy).toHaveBeenCalledWith(mockTotpData.validAccount, true, expect.any(String));
+            });
+
+            it('should disable email OTP successfully', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.enabledEmailOtpAccount);
+
+                const handleToggleEmailOtpSpy = jest.spyOn(authService, 'handleToggleEmailOtp').mockResolvedValue();
+
+                const result = await authService.toggleEmailOtp(4, false);
+
+                expect(result).toEqual({ message: 'Email OTP disabled successfully' });
+                expect(handleToggleEmailOtpSpy).toHaveBeenCalledWith(mockTotpData.enabledEmailOtpAccount, false);
+            });
+
+            it('should throw ServiceUnavailableException when email sending fails', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.validAccount);
+                jest.spyOn(authService, 'handleToggleEmailOtp').mockResolvedValue();
+
+                const generateEmailOtpSpy = jest.fn().mockReturnValue('123456');
+                const emailError = new Error('Email service unavailable');
+                const sendOtpEmailSpy = jest.fn().mockRejectedValue(emailError);
+
+                Reflect.set(authService, 'generateEmailOtp', generateEmailOtpSpy);
+                Reflect.set(authService, 'sendOtpEmail', sendOtpEmailSpy);
+
+                await expect(authService.toggleEmailOtp(1, true)).rejects.toThrow('Email service unavailable');
+            });
+
+            it('should throw UnauthorizedException when account not found', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
+
+                await expect(authService.toggleEmailOtp(999, true)).rejects.toThrow('Invalid credentials');
+            });
+        });
+
+        describe('Method: validateEmailOtpToken', () => {
+            it('should validate email OTP token successfully and return verified true', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.enabledEmailOtpAccount);
+
+                const handleVerifyOtpSpy = jest.spyOn(authService, 'handleVerifyOtp').mockReturnValue(true);
+
+                const updateSpy = jest.spyOn(verifyTokenRepository, 'update').mockResolvedValue({ affected: 1, raw: {}, generatedMaps: [] });
+
+                const result = await authService.validateEmailOtpToken(4, '123456');
+
+                expect(result).toEqual({ verified: true });
+                expect(handleVerifyOtpSpy).toHaveBeenCalledWith('123456', expect.any(Object), mockTotpData.enabledEmailOtpAccount.email, 300);
+                expect(updateSpy).toHaveBeenCalledWith({ account: { id: 4 } }, { emailOtpSecret: '' });
+            });
+
+            it('should validate email OTP token and return verified false', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.enabledEmailOtpAccount);
+                jest.spyOn(authService, 'handleVerifyOtp').mockReturnValue(false);
+                jest.spyOn(verifyTokenRepository, 'update').mockResolvedValue({ affected: 1, raw: {}, generatedMaps: [] });
+
+                const result = await authService.validateEmailOtpToken(4, '000000');
+
+                expect(result).toEqual({ verified: false });
+            });
+
+            it('should throw UnprocessableEntityException when email OTP is not enabled', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.validAccount);
+
+                await expect(authService.validateEmailOtpToken(1, '123456')).rejects.toThrow('Email OTP is not enabled');
+            });
+
+            it('should throw UnauthorizedException when account not found', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
+
+                await expect(authService.validateEmailOtpToken(999, '123456')).rejects.toThrow('Invalid credentials');
+            });
+
+            it('should throw ServiceUnavailableException when update fails', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.enabledEmailOtpAccount);
+                jest.spyOn(authService, 'handleVerifyOtp').mockReturnValue(true);
+
+                const updateError = new Error('Database update failed');
+
+                jest.spyOn(verifyTokenRepository, 'update').mockRejectedValue(updateError);
+
+                await expect(authService.validateEmailOtpToken(4, '123456')).rejects.toThrow('Database update failed');
+            });
+
+            it('should pass correct parameters to verify OTP', async () => {
+                jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.enabledEmailOtpAccount);
+
+                const verifySpy = jest.spyOn(authService, 'handleVerifyOtp').mockReturnValue(true);
+
+                jest.spyOn(verifyTokenRepository, 'update').mockResolvedValue({ affected: 1, raw: {}, generatedMaps: [] });
+
+                await authService.validateEmailOtpToken(4, '654321');
+
+                expect(verifySpy).toHaveBeenCalledWith('654321', expect.any(Object), 'email-otp@gmail.com', 300);
+            });
+        });
+    });
+
+    describe('Email Template Integration', () => {
+        it('should call mailerService.sendMail with correct template', async () => {
+            const email = 'test@example.com';
+            const otpCode = '123456';
+            const sendMailSpy = jest.spyOn(mailerService, 'sendMail');
+
+            await mailerService.sendMail({
+                to: email,
+                subject: 'Your OTP Code - Linker Chat',
+                template: './otp-email',
+                context: {
+                    otpCode,
+                    email,
+                },
+            });
+
+            expect(sendMailSpy).toHaveBeenCalledWith({
+                to: email,
+                subject: 'Your OTP Code - Linker Chat',
+                template: './otp-email',
+                context: {
+                    otpCode,
+                    email,
+                },
             });
         });
     });

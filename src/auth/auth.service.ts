@@ -8,8 +8,10 @@ import { AxiosError } from 'axios';
 import { compare, genSalt, hash } from 'bcrypt';
 import { plainToInstance } from 'class-transformer';
 import { type Response } from 'express';
+import { readFileSync } from 'fs';
 import jwkToPem from 'jwk-to-pem';
 import * as OTPAuth from 'otpauth';
+import { join } from 'path';
 import { firstValueFrom } from 'rxjs';
 import { MoreThanOrEqual, type Repository } from 'typeorm';
 import { v4 } from 'uuid';
@@ -24,7 +26,8 @@ import type { EnvFileVariables } from '~utils/environment';
 const OTP_CONFIG = {
     ALGORITHM: 'SHA1',
     DIGITS: 6,
-    PERIOD: 30,
+    TOTP_PERIOD: 30,
+    EMAIL_OTP_PERIOD: 300,
     /**
      * window: 1 để cho phép mã OTP có thể được sử dụng trước hoặc sau thời gian hiện tại 1 đơn vị thời gian.
      * tránh việc độ trễ mạng cao hoặc máy chủ chậm khiến mã OTP không hợp lệ.
@@ -104,7 +107,8 @@ export class AuthService {
             throw new UnauthorizedException('Wrong email or password');
         }
 
-        const authToken: AuthTokenDto | undefined = account.enableTotp ? undefined : await this.generateAccountTokens(account.email, account.id);
+        const isEnabledMfa: boolean = account.enableTotp || account.enableEmailOtp;
+        const authToken: AuthTokenDto | undefined = isEnabledMfa ? undefined : await this.generateAccountTokens(account.email, account.id);
 
         return plainToInstance(LoginCredentialResDto, { ...account, authToken }, { excludeExtraneousValues: true });
     }
@@ -153,11 +157,52 @@ export class AuthService {
     async validateTotpToken(accountId: number, token: string): Promise<{ verified: boolean }> {
         const account = await this.findAccountById(accountId);
 
-        if (!account.enableTotp || !account.verifyToken.totpSecret) {
+        if (!account.enableTotp) {
             throw new UnprocessableEntityException('TOTP is not enabled');
         }
 
-        const verified = this.validateEmailOtp(token, OTPAuth.Secret.fromBase32(account.verifyToken.totpSecret), account.email);
+        const verified = this.handleVerifyOtp(token, OTPAuth.Secret.fromBase32(account.verifyToken.totpSecret), account.email, OTP_CONFIG.TOTP_PERIOD);
+
+        return { verified };
+    }
+
+    async toggleEmailOtp(accountId: number, enable: boolean): Promise<{ message: string }> {
+        const account = await this.findAccountById(accountId);
+
+        if (!enable) {
+            await this.handleToggleEmailOtp(account, false);
+
+            return { message: 'Email OTP disabled successfully' };
+        }
+
+        const secret = new OTPAuth.Secret().base32;
+
+        await this.handleToggleEmailOtp(account, true, secret);
+
+        const otpCode = this.generateEmailOtp(secret, account.email);
+
+        const [sendEmailError] = await this.sendOtpEmail(account.email, otpCode).toSafe();
+
+        if (sendEmailError) {
+            throw new ServiceUnavailableException(sendEmailError.message, sendEmailError.stack);
+        }
+
+        return { message: 'OTP sent to email successfully' };
+    }
+
+    async validateEmailOtpToken(accountId: number, token: string): Promise<{ verified: boolean }> {
+        const account = await this.findAccountById(accountId);
+
+        if (!account.enableEmailOtp) {
+            throw new UnprocessableEntityException('Email OTP is not enabled');
+        }
+
+        const verified = this.handleVerifyOtp(token, OTPAuth.Secret.fromBase32(account.verifyToken.emailOtpSecret), account.email, OTP_CONFIG.EMAIL_OTP_PERIOD);
+        const [error] = await this.verifyTokenRepository.update({ account: { id: accountId } }, { emailOtpSecret: '' }).toSafe();
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
 
         return { verified };
     }
@@ -369,32 +414,91 @@ export class AuthService {
         return response.redirect(`${appScheme}?${outgoingParams.toString()}`);
     }
 
-    validateEmailOtp(token: string, secret: OTPAuth.Secret, accountEmail: string): boolean {
+    handleVerifyOtp(token: string, secret: OTPAuth.Secret, accountEmail: string, period: number): boolean {
         const totp = new OTPAuth.TOTP({
             secret,
             label: accountEmail,
             issuer: 'Linker Chat',
             algorithm: OTP_CONFIG.ALGORITHM,
             digits: OTP_CONFIG.DIGITS,
-            period: OTP_CONFIG.PERIOD,
+            period,
         });
 
         const [error, result] = totp.validate.bind(totp).toSafe({
-            /**
-             * window: 1 để cho phép mã OTP có thể được sử dụng trước hoặc sau thời gian hiện tại 1 đơn vị thời gian.
-             * tránh việc độ trễ mạng cao hoặc máy chủ chậm khiến mã OTP không hợp lệ.
-             */
             window: OTP_CONFIG.WINDOW,
             token,
         });
 
         if (error || result === null) {
-            const message: string = error instanceof Error ? error.message : 'Error while verifying OTP';
+            const message: string = error instanceof Error ? error.message : 'OTP is invalid or expired';
 
             throw new UnauthorizedException(message);
         }
 
         return typeof result === 'number';
+    }
+
+    async handleToggleEmailOtp(account: Account, toggleAction: boolean, secret?: string): Promise<void> {
+        const [error] = await this.accountRepository.manager
+            .transaction(async transactionalEntityManager => {
+                account.enableEmailOtp = toggleAction;
+                account.verifyToken.emailOtpSecret = secret ?? '';
+                await transactionalEntityManager.save(Account, account);
+            })
+            .toSafe();
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+    }
+
+    /**
+     * Generate 6-digit OTP code using TOTP algorithm
+     */
+    private generateEmailOtp(secretBase32: string, email: string): string {
+        const totp = new OTPAuth.TOTP({
+            secret: OTPAuth.Secret.fromBase32(secretBase32),
+            label: email,
+            issuer: 'Linker Chat',
+            algorithm: OTP_CONFIG.ALGORITHM,
+            digits: OTP_CONFIG.DIGITS,
+            period: OTP_CONFIG.EMAIL_OTP_PERIOD,
+        });
+
+        return totp.generate();
+    }
+
+    /**
+     * Send OTP code via email using Handlebars template
+     */
+    private async sendOtpEmail(email: string, otpCode: string): Promise<void> {
+        const [error, html] = this.generateOtpEmail.bind(this).toSafe(email, otpCode);
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+
+        await this.mailerService.sendMail({
+            to: email,
+            subject: 'Your OTP Code - Linker Chat',
+            html,
+        });
+    }
+
+    private getEmailTemplate(templateName: string): string {
+        const templatePath = join(__dirname, '../assets/email-templates', `${templateName}.html`);
+
+        return readFileSync(templatePath, 'utf-8');
+    }
+
+    private generateOtpEmail(email: string, otpCode: string): string {
+        const template = this.getEmailTemplate('otp-email');
+        const OTP_EXPIRATION_MINUTES = (OTP_CONFIG.EMAIL_OTP_PERIOD / 60).toString();
+
+        return template
+            .replace(/{{EMAIL}}/g, email)
+            .replace(/{{OTP_CODE}}/g, otpCode)
+            .replace(/{{OTP_EXPIRATION}}/g, OTP_EXPIRATION_MINUTES);
     }
 
     /**
