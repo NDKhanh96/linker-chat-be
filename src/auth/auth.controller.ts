@@ -71,14 +71,13 @@ export class AuthController {
     }
 
     @Post('totp/validate')
-    @UseGuards(AuthGuard('jwt'))
     @HttpCode(200)
     @ApiBearerAuth()
     @ApiOperation({ summary: 'Validate totp by code in authenticator app' })
     @ApiResponse({ status: 200, description: 'Validate 2 factor authentication successful', type: TotpValidationResponseDto })
     @ApiResponse({ status: 401, description: 'Unauthorized' })
-    validateTotpToken(@Req() req: Express.AuthenticatedRequest, @Body() validateTokenDTO: ValidateTotpTokenDTO): Promise<TotpValidationResponseDto> {
-        return this.authService.validateTotpToken(req.user.id, validateTokenDTO.token);
+    validateTotpToken(@Body() validateTokenDTO: ValidateTotpTokenDTO): Promise<TotpValidationResponseDto> {
+        return this.authService.validateTotpToken(validateTokenDTO);
     }
 
     @Post('email-otp/toggle')
@@ -94,15 +93,14 @@ export class AuthController {
     }
 
     @Post('email-otp/validate')
-    @UseGuards(AuthGuard('jwt'))
     @HttpCode(200)
     @ApiBearerAuth()
     @ApiBody({ type: ValidateEmailOtpDto })
     @ApiOperation({ summary: 'Validate OTP code sent to email' })
     @ApiResponse({ status: 200, description: 'Email OTP validation successful', type: EmailOtpValidationResponseDto })
     @ApiResponse({ status: 401, description: 'Unauthorized' })
-    validateEmailOtp(@Req() req: Express.AuthenticatedRequest, @Body() validateOtpDto: ValidateEmailOtpDto): Promise<EmailOtpValidationResponseDto> {
-        return this.authService.validateEmailOtpToken(req.user.id, validateOtpDto.token);
+    validateEmailOtp(@Body() validateOtpDto: ValidateEmailOtpDto): Promise<EmailOtpValidationResponseDto> {
+        return this.authService.validateEmailOtpToken(validateOtpDto);
     }
 
     @Get('social/login')

@@ -16,7 +16,16 @@ import { firstValueFrom } from 'rxjs';
 import { MoreThanOrEqual, type Repository } from 'typeorm';
 import { v4 } from 'uuid';
 
-import type { AuthTokenDto, CreateAccountDto, LoginDto } from '~/auth/dto';
+import type {
+    AuthTokenDto,
+    CreateAccountDto,
+    EmailOtpValidationResponseDto,
+    LoginDto,
+    TotpSecretResponseDto,
+    TotpValidationResponseDto,
+    ValidateEmailOtpDto,
+    ValidateTotpTokenDTO,
+} from '~/auth/dto';
 import { GoogleLoginErrorDto, LoginCredentialResDto } from '~/auth/dto';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
 import type { GoogleIdTokenDecoded, JwksResponse, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
@@ -93,6 +102,11 @@ export class AuthService {
         return plainToInstance(Account, savedAccount, { excludeExtraneousValues: true });
     }
 
+    /**
+     * Nếu chưa kích hoạt email OTP và TOTP thì sẽ trả về authToken.
+     * Nếu chỉ kích hoạt email OTP mà không kích hoạt thêm MFA nào khác thì sẽ gửi mã OTP qua email và không trả về authToken.
+     * Nếu đã kích hoạt TOTP thì sẽ không trả về authToken, FE cần xử lý để nhập mã TOTP.
+     */
     async login(loginDTO: LoginDto): Promise<LoginCredentialResDto> {
         const { email, password } = loginDTO;
         const account = await this.findAccountByEmail(email);
@@ -107,8 +121,23 @@ export class AuthService {
             throw new UnauthorizedException('Wrong email or password');
         }
 
-        const isEnabledMfa: boolean = account.enableTotp || account.enableEmailOtp;
-        const authToken: AuthTokenDto | undefined = isEnabledMfa ? undefined : await this.generateAccountTokens(account.email, account.id);
+        let authToken: AuthTokenDto | undefined = undefined;
+
+        if (!account.enableEmailOtp && !account.enableTotp) {
+            authToken = await this.generateAccountTokens(account.email, account.id);
+        }
+
+        if (account.enableEmailOtp && !account.enableTotp) {
+            const secret = new OTPAuth.Secret().base32;
+
+            await this.handleUpdateEmailOtpSecret(account, secret);
+            const emailOtp = this.generateEmailOtp(secret, account.email);
+            const [sendEmailError] = await this.sendOtpEmail.bind(this).toSafeAsync(account.email, emailOtp);
+
+            if (sendEmailError) {
+                throw new ServiceUnavailableException(sendEmailError.message, sendEmailError.stack);
+            }
+        }
 
         return plainToInstance(LoginCredentialResDto, { ...account, authToken }, { excludeExtraneousValues: true });
     }
@@ -129,7 +158,7 @@ export class AuthService {
         return this.generateAccountTokens(token.account.email, token.account.id);
     }
 
-    async toggleTotp(accountId: number, enable: boolean): Promise<{ secret: string }> {
+    async toggleTotp(accountId: number, enable: boolean): Promise<TotpSecretResponseDto> {
         const account = await this.findAccountById(accountId);
 
         if (account.enableTotp === enable) {
@@ -154,8 +183,8 @@ export class AuthService {
         return { secret };
     }
 
-    async validateTotpToken(accountId: number, token: string): Promise<{ verified: boolean }> {
-        const account = await this.findAccountById(accountId);
+    async validateTotpToken({ email, token, getAuthTokens }: ValidateTotpTokenDTO): Promise<TotpValidationResponseDto> {
+        const account = await this.findAccountByEmail(email);
 
         if (!account.enableTotp) {
             throw new UnprocessableEntityException('TOTP is not enabled');
@@ -163,7 +192,13 @@ export class AuthService {
 
         const verified = this.handleVerifyOtp(token, OTPAuth.Secret.fromBase32(account.verifyToken.totpSecret), account.email, OTP_CONFIG.TOTP_PERIOD);
 
-        return { verified };
+        if (!getAuthTokens) {
+            return { verified };
+        }
+
+        const authToken = await this.generateAccountTokens(account.email, account.id);
+
+        return { verified, authToken };
     }
 
     async toggleEmailOtp(accountId: number, enable: boolean): Promise<{ message: string }> {
@@ -180,7 +215,6 @@ export class AuthService {
         await this.handleToggleEmailOtp(account, true, secret);
 
         const otpCode = this.generateEmailOtp(secret, account.email);
-
         const [sendEmailError] = await this.sendOtpEmail(account.email, otpCode).toSafe();
 
         if (sendEmailError) {
@@ -190,21 +224,27 @@ export class AuthService {
         return { message: 'OTP sent to email successfully' };
     }
 
-    async validateEmailOtpToken(accountId: number, token: string): Promise<{ verified: boolean }> {
-        const account = await this.findAccountById(accountId);
+    async validateEmailOtpToken({ email, token, getAuthTokens }: ValidateEmailOtpDto): Promise<EmailOtpValidationResponseDto> {
+        const account = await this.findAccountByEmail(email);
 
         if (!account.enableEmailOtp) {
             throw new UnprocessableEntityException('Email OTP is not enabled');
         }
 
         const verified = this.handleVerifyOtp(token, OTPAuth.Secret.fromBase32(account.verifyToken.emailOtpSecret), account.email, OTP_CONFIG.EMAIL_OTP_PERIOD);
-        const [error] = await this.verifyTokenRepository.update({ account: { id: accountId } }, { emailOtpSecret: '' }).toSafe();
+        const [error] = await this.verifyTokenRepository.update({ account: { id: account.id } }, { emailOtpSecret: '' }).toSafe();
 
         if (error) {
             throw new ServiceUnavailableException(error.message, error.stack);
         }
 
-        return { verified };
+        if (!getAuthTokens) {
+            return { verified };
+        }
+
+        const authToken = await this.generateAccountTokens(account.email, account.id);
+
+        return { verified, authToken };
     }
 
     /**
@@ -446,6 +486,14 @@ export class AuthService {
                 await transactionalEntityManager.save(Account, account);
             })
             .toSafe();
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+    }
+
+    async handleUpdateEmailOtpSecret(account: Account, secret?: string): Promise<void> {
+        const [error] = await this.verifyTokenRepository.update({ account: { id: account.id } }, { emailOtpSecret: secret ?? '' }).toSafe();
 
         if (error) {
             throw new ServiceUnavailableException(error.message, error.stack);
