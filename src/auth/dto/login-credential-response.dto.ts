@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
-import { IsBoolean, IsNotEmpty, IsNumber, IsString, ValidateNested } from 'class-validator';
+import { IsBoolean, IsEmail, IsNotEmpty, IsNumber, ValidateNested } from 'class-validator';
 
 import { AuthTokenDto } from '~/auth/dto';
 
@@ -13,7 +13,7 @@ export class LoginCredentialResDto {
 
     @ApiProperty()
     @Expose()
-    @IsString()
+    @IsEmail()
     @IsNotEmpty()
     email: string;
 

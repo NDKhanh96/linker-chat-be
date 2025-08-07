@@ -1,10 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsString } from 'class-validator';
+import { IsBoolean, IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class ValidateTotpTokenDTO {
     @ApiProperty()
     @IsNotEmpty()
-    @IsString()
+    @IsEmail()
     email: string;
 
     @ApiProperty()
@@ -12,7 +12,8 @@ export class ValidateTotpTokenDTO {
     @IsString()
     token: string;
 
-    @ApiProperty()
+    @ApiProperty({ required: false })
+    @IsOptional()
     @IsBoolean()
     getAuthTokens?: boolean;
 }

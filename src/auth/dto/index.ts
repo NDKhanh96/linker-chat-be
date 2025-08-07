@@ -7,6 +7,7 @@ export * from '~/auth/dto/google-login-axios-error.dto';
 export * from '~/auth/dto/login-credential-response.dto';
 export * from '~/auth/dto/login.dto';
 export * from '~/auth/dto/refresh-token.dto';
+export * from '~/auth/dto/resend-email.dto';
 export * from '~/auth/dto/send-email-otp.dto';
 export * from '~/auth/dto/toggle-totp.dto';
 export * from '~/auth/dto/totp-response.dto';

@@ -12,6 +12,7 @@ import {
     LoginCredentialResDto,
     LoginDto,
     RefreshTokenDto,
+    ResendEmailDto,
     SendEmailOtpDto,
     ToggleTotpDto,
     TotpSecretResponseDto,
@@ -72,7 +73,6 @@ export class AuthController {
 
     @Post('totp/validate')
     @HttpCode(200)
-    @ApiBearerAuth()
     @ApiOperation({ summary: 'Validate totp by code in authenticator app' })
     @ApiResponse({ status: 200, description: 'Validate 2 factor authentication successful', type: TotpValidationResponseDto })
     @ApiResponse({ status: 401, description: 'Unauthorized' })
@@ -94,13 +94,22 @@ export class AuthController {
 
     @Post('email-otp/validate')
     @HttpCode(200)
-    @ApiBearerAuth()
     @ApiBody({ type: ValidateEmailOtpDto })
     @ApiOperation({ summary: 'Validate OTP code sent to email' })
     @ApiResponse({ status: 200, description: 'Email OTP validation successful', type: EmailOtpValidationResponseDto })
     @ApiResponse({ status: 401, description: 'Unauthorized' })
     validateEmailOtp(@Body() validateOtpDto: ValidateEmailOtpDto): Promise<EmailOtpValidationResponseDto> {
         return this.authService.validateEmailOtpToken(validateOtpDto);
+    }
+
+    @Post('email-otp/resend')
+    @HttpCode(200)
+    @ApiBody({ type: ResendEmailDto, description: 'Email address to resend OTP' })
+    @ApiOperation({ summary: 'Resend OTP code to email' })
+    @ApiResponse({ status: 200, description: 'Email OTP resent successfully', type: EmailOtpResponseDto })
+    @ApiResponse({ status: 401, description: 'Unauthorized' })
+    resendEmailOtp(@Body() resendOtpDto: ResendEmailDto): Promise<EmailOtpResponseDto> {
+        return this.authService.resendEmailOtp(resendOtpDto.email);
     }
 
     @Get('social/login')

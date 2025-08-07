@@ -8,6 +8,7 @@
     "typescript.preferences.preferTypeOnlyAutoImports": true,
     "cSpell.words": [
         "authuser",
+        "cooldown",
         "dotenv",
         "otpauth",
         "pids",

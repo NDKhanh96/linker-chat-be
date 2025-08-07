@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean } from 'class-validator';
+import { IsBoolean, IsNotEmpty } from 'class-validator';
 
 export class SendEmailOtpDto {
     @ApiProperty({
@@ -7,6 +7,7 @@ export class SendEmailOtpDto {
         example: true,
         type: 'boolean',
     })
-    @IsBoolean()
+    @IsBoolean({ message: 'enable must be a boolean value' })
+    @IsNotEmpty({ message: 'enable field is required' })
     enable: boolean;
 }

@@ -5,7 +5,7 @@
  */
 jest.unmock('bcrypt');
 
-import { type INestApplication } from '@nestjs/common';
+import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import type { Server } from 'net';
 import request from 'supertest';
@@ -33,6 +33,13 @@ describe('Auth', (): void => {
         }).compile();
 
         app = moduleRef.createNestApplication();
+        app.useGlobalPipes(
+            new ValidationPipe({
+                whitelist: true,
+                forbidNonWhitelisted: true,
+                transform: true,
+            }),
+        );
         await app.init();
 
         const dataSource: DataSource = app.get(DataSource);
@@ -72,56 +79,6 @@ describe('Auth', (): void => {
         expect(response.status).toBe(200);
         expect(response.body.authToken.accessToken).toBeDefined();
         expect(response.body.authToken.refreshToken).toBeDefined();
-    });
-
-    it('/auth/social/login (GET) should redirect to Google OAuth', async () => {
-        const googleAuthQuery: QueryGoogleAuth = {
-            code_challenge: 'test_challenge',
-            code_challenge_method: 'S256',
-            redirect_uri: 'myapp://callback',
-            client_id: 'google',
-            response_type: 'code',
-            state: 'test_state',
-            scope: 'openid email profile',
-        };
-        const response = await request(app.getHttpServer()).get('/auth/social/login').query(googleAuthQuery);
-
-        expect(response.status).toBe(302);
-        expect(response.headers.location).toContain('https://accounts.google.com/o/oauth2/v2/auth');
-        expect(response.headers.location).toContain('client_id=');
-    });
-
-    it('/auth/google/callback (GET) should redirect to app scheme with code and state', async () => {
-        const callbackQuery: QueryGoogleCallback = {
-            code: 'test-code',
-            state: 'myapp://callback|raw-state-value',
-            authuser: '0',
-            prompt: 'consent',
-            scope: 'openid email profile',
-        };
-
-        const response = await request(app.getHttpServer()).get('/auth/google/callback').query(callbackQuery);
-
-        expect(response.status).toBe(302);
-        expect(response.headers.location).toContain('myapp://callback?');
-        expect(response.headers.location).toContain('code=test-code');
-        expect(response.headers.location).toContain('state=raw-state-value');
-    });
-
-    /**
-     * Trường hợp này thường sẽ fail vì không có Google token thật, nên chỉ test trả về lỗi.
-     */
-    it('/auth/google/login (POST) should return 401 if Google token is invalid', async () => {
-        const body = { code: 'invalid-code', codeVerifier: 'invalid-verifier' };
-
-        const response = await request(app.getHttpServer()).post('/auth/google/login').send(body);
-
-        expect(response.status).toBe(401);
-        expect(response.body).toEqual({
-            error: 'Malformed auth code.',
-            message: 'invalid_grant',
-            statusCode: 401,
-        });
     });
 
     describe('/auth/refresh (POST)', () => {
@@ -271,10 +228,17 @@ describe('Auth', (): void => {
             accessToken = loginResponse.body.authToken.accessToken;
 
             expect(accessToken).toBeDefined();
+
+            /**
+             * Cần bật TOTP trước khi validate.
+             */
+            const toggle = await request(app.getHttpServer()).post('/auth/totp/toggle').set('Authorization', `Bearer ${accessToken}`).send({ toggle: true });
+
+            expect(toggle.status).toBe(200);
         });
 
         it('should return 401 without authorization header', async () => {
-            const response = await request(app.getHttpServer()).post('/auth/totp/validate').send({ token: '123456' });
+            const response = await request(app.getHttpServer()).post('/auth/totp/validate').send({ email: 'mfa-validate-test@gmail.com', token: '123456' });
 
             expect(response.status).toBe(401);
         });
@@ -283,7 +247,7 @@ describe('Auth', (): void => {
             const response = await request(app.getHttpServer())
                 .post('/auth/totp/validate')
                 .set('Authorization', 'Bearer invalid-token')
-                .send({ token: '123456' });
+                .send({ email: 'mfa-validate-test@gmail.com', token: '123456' });
 
             expect(response.status).toBe(401);
         });
@@ -293,19 +257,378 @@ describe('Auth', (): void => {
          * để tạo token hợp lệ. Test này chỉ kiểm tra response format.
          */
         it('should return validation result for invalid OTP token', async () => {
-            const totpResponse = await request(app.getHttpServer())
-                .post('/auth/totp/toggle')
-                .set('Authorization', `Bearer ${accessToken}`)
-                .send({ toggle: true });
-
-            expect(totpResponse.status).toBe(200);
-
             const response: SRes<{ verified: boolean }> = await request(app.getHttpServer())
                 .post('/auth/totp/validate')
                 .set('Authorization', `Bearer ${accessToken}`)
-                .send({ token: '000000' });
+                .send({ email: 'mfa-validate-test@gmail.com', token: '000000' });
 
             expect(response.status).toBe(401);
+        });
+    });
+
+    describe('/auth/email-otp/toggle (POST)', () => {
+        let accessToken: string;
+
+        beforeAll(async () => {
+            const testUser = {
+                firstName: 'email-otp',
+                lastName: 'user',
+                avatar: '',
+                email: 'email-otp-test@gmail.com',
+                password: '123456',
+                confirmPassword: '123456',
+                isCredential: true,
+            };
+
+            await request(app.getHttpServer()).post('/auth/register').send(testUser);
+
+            const loginResponse: SRes<{ authToken: { accessToken: string } }> = await request(app.getHttpServer()).post('/auth/login').send({
+                email: testUser.email,
+                password: testUser.password,
+            });
+
+            accessToken = loginResponse.body.authToken.accessToken;
+        });
+
+        it('should enable email OTP successfully', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/email-otp/toggle')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ enable: true });
+
+            expect(response.status).toBe(200);
+            expect(response.body.message).toBe('OTP sent to email successfully');
+        });
+
+        it('should disable email OTP successfully', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/email-otp/toggle')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ enable: false });
+
+            expect(response.status).toBe(200);
+            expect(response.body.message).toBe('Email OTP disabled successfully');
+        });
+
+        it('should enable email OTP again after disabling', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/email-otp/toggle')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ enable: true });
+
+            expect(response.status).toBe(200);
+            expect(response.body.message).toBe('OTP sent to email successfully');
+        });
+
+        it('should return 401 without authorization header', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/email-otp/toggle').send({ enable: true });
+
+            expect(response.status).toBe(401);
+        });
+
+        it('should return 401 with invalid token', async () => {
+            const response = await request(app.getHttpServer())
+                .post('/auth/email-otp/toggle')
+                .set('Authorization', 'Bearer invalid-token')
+                .send({ enable: true });
+
+            expect(response.status).toBe(401);
+        });
+
+        it('should return 400 with invalid request body', async () => {
+            const response = await request(app.getHttpServer())
+                .post('/auth/email-otp/toggle')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ invalid: 'field' });
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should handle missing enable field', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/email-otp/toggle').set('Authorization', `Bearer ${accessToken}`).send({});
+
+            expect(response.status).toBe(400);
+        });
+    });
+
+    /**
+     * Vì cần OTP từ email nên không test được case success với OTP thật,
+     * nhưng vẫn có thể test các case error và validation
+     */
+    describe('/auth/email-otp/validate (POST)', () => {
+        let accessToken: string;
+        const testEmail = 'email-otp-validate-test@gmail.com';
+
+        beforeAll(async () => {
+            const testUser = {
+                firstName: 'email-otp-validate',
+                lastName: 'user',
+                avatar: '',
+                email: testEmail,
+                password: '123456',
+                confirmPassword: '123456',
+                isCredential: true,
+            };
+
+            await request(app.getHttpServer()).post('/auth/register').send(testUser);
+
+            const loginResponse: SRes<{ authToken: { accessToken: string } }> = await request(app.getHttpServer()).post('/auth/login').send({
+                email: testUser.email,
+                password: testUser.password,
+            });
+
+            accessToken = loginResponse.body.authToken.accessToken;
+
+            /**
+             * Enable email OTP for testing
+             */
+            const toggleEmailOtpResponse = await request(app.getHttpServer())
+                .post('/auth/email-otp/toggle')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ enable: true });
+
+            expect(toggleEmailOtpResponse.status).toBe(200);
+        });
+
+        it('should return 422 when email OTP is not enabled for account', async () => {
+            const userWithoutOtp = {
+                firstName: 'no-otp',
+                lastName: 'user',
+                avatar: '',
+                email: 'no-otp@gmail.com',
+                password: '123456',
+                confirmPassword: '123456',
+                isCredential: true,
+            };
+
+            await request(app.getHttpServer()).post('/auth/register').send(userWithoutOtp);
+
+            const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
+                email: userWithoutOtp.email,
+                token: '123456',
+                getAuthTokens: false,
+            });
+
+            expect(response.status).toBe(422);
+            expect(response.body.message).toBe('Email OTP is not enabled');
+        });
+
+        it('should return 401 with non-existent email', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
+                email: 'nonexistent@email.com',
+                token: '123456',
+                getAuthTokens: false,
+            });
+
+            expect(response.status).toBe(401);
+            expect(response.body.message).toBe('Invalid credentials');
+        });
+
+        it('should return 401 with invalid OTP format', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
+                email: testEmail,
+                token: 'invalid-otp-format',
+                getAuthTokens: false,
+            });
+
+            expect(response.status).toBe(400); // Validation error
+        });
+
+        it('should return 401 with wrong OTP code', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
+                email: testEmail,
+                token: '000000', // Wrong OTP
+                getAuthTokens: false,
+            });
+
+            expect(response.status).toBe(401);
+            expect(response.body.message).toMatch(/Invalid OTP code|No OTP found|OTP has expired/);
+        });
+
+        it('should return 400 with missing required fields', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({}); // Missing email and token
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should return 400 with invalid email format', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
+                email: 'invalid-email-format',
+                token: '123456',
+                getAuthTokens: false,
+            });
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should return 400 with token not exactly 6 digits', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
+                email: testEmail,
+                token: '12345',
+                getAuthTokens: false,
+            });
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should return 400 with non-numeric token', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
+                email: testEmail,
+                token: 'abc123',
+                getAuthTokens: false,
+            });
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should handle getAuthTokens parameter correctly in request', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
+                email: testEmail,
+                token: '123456',
+                getAuthTokens: true,
+            });
+
+            /**
+             * Sẽ fail vì OTP sai nhưng ít nhất validate được parameter structure
+             */
+            expect(response.status).toBe(401);
+            expect(response.body.message).toMatch(/Invalid OTP code|No OTP found|OTP has expired/);
+        });
+
+        /**
+         * NOTE: Không thể test success case với OTP thật vì:
+         * 1. OTP được gửi qua email thật
+         * 2. OTP có thời gian expire ngắn (15 phút)
+         * 3. OTP ngẫu nhiên không thể đoán trước
+         *
+         * Để test success case, cần:
+         * - Mock email service trong test environment
+         * - Hoặc tạo test utility để generate/verify OTP
+         * - Hoặc expose development-only endpoint để get OTP for testing
+         */
+    });
+
+    describe('/auth/email-otp/resend (POST)', () => {
+        let accessToken: string;
+        const testEmail = 'email-otp-resend-test@gmail.com';
+
+        beforeAll(async () => {
+            const testUser = {
+                firstName: 'email-otp-resend',
+                lastName: 'user',
+                avatar: '',
+                email: testEmail,
+                password: '123456',
+                confirmPassword: '123456',
+                isCredential: true,
+            };
+
+            await request(app.getHttpServer()).post('/auth/register').send(testUser);
+
+            const loginResponse: SRes<{ authToken: { accessToken: string } }> = await request(app.getHttpServer()).post('/auth/login').send({
+                email: testUser.email,
+                password: testUser.password,
+            });
+
+            accessToken = loginResponse.body.authToken.accessToken;
+
+            const toggleEmailOtpResponse = await request(app.getHttpServer())
+                .post('/auth/email-otp/toggle')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ enable: true });
+
+            expect(toggleEmailOtpResponse.status).toBe(200);
+        });
+
+        it('should resend email OTP successfully when email OTP is enabled', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/email-otp/resend')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ email: testEmail });
+
+            expect(response.status).toBe(200);
+            expect(response.body.message).toBe('New OTP sent to email successfully');
+        });
+
+        it('should return 422 when email OTP is not enabled', async () => {
+            /**
+             * Disable email OTP first
+             */
+            await request(app.getHttpServer()).post('/auth/email-otp/toggle').set('Authorization', `Bearer ${accessToken}`).send({ enable: false });
+
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/email-otp/resend')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ email: testEmail });
+
+            expect(response.status).toBe(422);
+            expect(response.body.message).toBe('Email OTP is not enabled');
+        });
+
+        it('should return 401 with non-existent email', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/email-otp/resend')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({ email: 'nonexistent@email.com' });
+
+            expect(response.status).toBe(401);
+            expect(response.body.message).toBe('Invalid credentials');
+        });
+    });
+
+    describe('/auth/social/login (GET)', () => {
+        it('should redirect to Google OAuth', async () => {
+            const googleAuthQuery: QueryGoogleAuth = {
+                code_challenge: 'test_challenge',
+                code_challenge_method: 'S256',
+                redirect_uri: 'myapp://callback',
+                client_id: 'google',
+                response_type: 'code',
+                state: 'test_state',
+                scope: 'openid email profile',
+            };
+            const response = await request(app.getHttpServer()).get('/auth/social/login').query(googleAuthQuery);
+
+            expect(response.status).toBe(302);
+            expect(response.headers.location).toContain('https://accounts.google.com/o/oauth2/v2/auth');
+            expect(response.headers.location).toContain('client_id=');
+        });
+    });
+
+    describe('/auth/google/callback (GET)', () => {
+        it('should redirect to app scheme with code and state', async () => {
+            const callbackQuery: QueryGoogleCallback = {
+                code: 'test-code',
+                state: 'myapp://callback|raw-state-value',
+                authuser: '0',
+                prompt: 'consent',
+                scope: 'openid email profile',
+            };
+
+            const response = await request(app.getHttpServer()).get('/auth/google/callback').query(callbackQuery);
+
+            expect(response.status).toBe(302);
+            expect(response.headers.location).toContain('myapp://callback?');
+            expect(response.headers.location).toContain('code=test-code');
+            expect(response.headers.location).toContain('state=raw-state-value');
+        });
+    });
+
+    /**
+     * Trường hợp này thường sẽ fail vì không có Google token thật, nên chỉ test trả về lỗi.
+     */
+    describe('/auth/google/login (POST)', () => {
+        it('should return 401 if Google token is invalid', async () => {
+            const body = { code: 'invalid-code', codeVerifier: 'invalid-verifier' };
+
+            const response = await request(app.getHttpServer()).post('/auth/google/login').send(body);
+
+            expect(response.status).toBe(401);
+            expect(response.body).toEqual({
+                error: 'Malformed auth code.',
+                message: 'invalid_grant',
+                statusCode: 401,
+            });
         });
     });
 });

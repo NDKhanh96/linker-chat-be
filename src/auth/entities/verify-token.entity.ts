@@ -14,8 +14,16 @@ export class VerifyToken {
     forgotPasswordSecret: string;
 
     @Expose()
-    @Column({ name: 'email_otp_secret', default: '' })
-    emailOtpSecret: string;
+    @Column({ name: 'email_otp_code', type: 'varchar', length: 6, nullable: true })
+    emailOtpCode: string | null;
+
+    @Expose()
+    @Column({ name: 'email_otp_expires_at', type: 'timestamp', nullable: true })
+    emailOtpExpiresAt: Date | null;
+
+    @Expose()
+    @Column({ name: 'email_otp_attempts', type: 'int', default: 0 })
+    emailOtpAttempts: number;
 
     @Expose()
     @Column({ name: 'totp_secret', default: '' })

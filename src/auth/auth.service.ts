@@ -32,11 +32,14 @@ import type { GoogleIdTokenDecoded, JwksResponse, QueryGoogleAuth, QueryGoogleCa
 import { User } from '~/user/entities';
 import type { EnvFileVariables } from '~utils/environment';
 
+// TODO: Sửa thành DI cho dễ test
 const OTP_CONFIG = {
     ALGORITHM: 'SHA1',
     DIGITS: 6,
     TOTP_PERIOD: 30,
-    EMAIL_OTP_PERIOD: 300,
+    EMAIL_OTP_TTL_MS: 15 * 60 * 1000,
+    EMAIL_OTP_RESEND_COOLDOWN_MS: process.env.NODE_ENV === 'test' ? 0 : 60 * 1000,
+    MAX_EMAIL_OTP_ATTEMPTS: 5,
     /**
      * window: 1 để cho phép mã OTP có thể được sử dụng trước hoặc sau thời gian hiện tại 1 đơn vị thời gian.
      * tránh việc độ trễ mạng cao hoặc máy chủ chậm khiến mã OTP không hợp lệ.
@@ -128,11 +131,7 @@ export class AuthService {
         }
 
         if (account.enableEmailOtp && !account.enableTotp) {
-            const secret = new OTPAuth.Secret().base32;
-
-            await this.handleUpdateEmailOtpSecret(account, secret);
-            const emailOtp = this.generateEmailOtp(secret, account.email);
-            const [sendEmailError] = await this.sendOtpEmail.bind(this).toSafeAsync(account.email, emailOtp);
+            const [sendEmailError] = await this.sendNewEmailOtp.bind(this).toSafeAsync(account);
 
             if (sendEmailError) {
                 throw new ServiceUnavailableException(sendEmailError.message, sendEmailError.stack);
@@ -190,7 +189,7 @@ export class AuthService {
             throw new UnprocessableEntityException('TOTP is not enabled');
         }
 
-        const verified = this.handleVerifyOtp(token, OTPAuth.Secret.fromBase32(account.verifyToken.totpSecret), account.email, OTP_CONFIG.TOTP_PERIOD);
+        const verified = this.handleVerifyTotp(token, OTPAuth.Secret.fromBase32(account.verifyToken.totpSecret), account.email, OTP_CONFIG.TOTP_PERIOD);
 
         if (!getAuthTokens) {
             return { verified };
@@ -210,18 +209,52 @@ export class AuthService {
             return { message: 'Email OTP disabled successfully' };
         }
 
-        const secret = new OTPAuth.Secret().base32;
+        await this.handleToggleEmailOtp(account, true);
 
-        await this.handleToggleEmailOtp(account, true, secret);
+        await this.sendNewEmailOtp(account);
 
-        const otpCode = this.generateEmailOtp(secret, account.email);
+        return { message: 'OTP sent to email successfully' };
+    }
+
+    /**
+     * Resend email OTP
+     */
+    async resendEmailOtp(email: string): Promise<{ message: string }> {
+        const account = await this.findAccountByEmail(email);
+
+        if (!account.enableEmailOtp) {
+            throw new UnprocessableEntityException('Email OTP is not enabled');
+        }
+
+        await this.sendNewEmailOtp(account);
+
+        return { message: 'New OTP sent to email successfully' };
+    }
+
+    /**
+     * Send new email OTP with resend cooldown check
+     */
+    async sendNewEmailOtp(account: Account): Promise<void> {
+        if (account.verifyToken.emailOtpExpiresAt) {
+            const lastSentTime = new Date(account.verifyToken.emailOtpExpiresAt.getTime() - OTP_CONFIG.EMAIL_OTP_TTL_MS);
+            const cooldownEnd = new Date(lastSentTime.getTime() + OTP_CONFIG.EMAIL_OTP_RESEND_COOLDOWN_MS);
+
+            if (new Date() < cooldownEnd) {
+                const remainingSeconds = Math.ceil((cooldownEnd.getTime() - Date.now()) / 1000);
+
+                throw new UnprocessableEntityException(`Please wait ${remainingSeconds} seconds before requesting a new OTP`);
+            }
+        }
+
+        const otpCode = this.generateRandomEmailOtp();
+        const expiresAt = new Date(Date.now() + OTP_CONFIG.EMAIL_OTP_TTL_MS);
+
+        await this.storeEmailOtp(account.id, otpCode, expiresAt);
         const [sendEmailError] = await this.sendOtpEmail(account.email, otpCode).toSafe();
 
         if (sendEmailError) {
             throw new ServiceUnavailableException(sendEmailError.message, sendEmailError.stack);
         }
-
-        return { message: 'OTP sent to email successfully' };
     }
 
     async validateEmailOtpToken({ email, token, getAuthTokens }: ValidateEmailOtpDto): Promise<EmailOtpValidationResponseDto> {
@@ -231,12 +264,13 @@ export class AuthService {
             throw new UnprocessableEntityException('Email OTP is not enabled');
         }
 
-        const verified = this.handleVerifyOtp(token, OTPAuth.Secret.fromBase32(account.verifyToken.emailOtpSecret), account.email, OTP_CONFIG.EMAIL_OTP_PERIOD);
-        const [error] = await this.verifyTokenRepository.update({ account: { id: account.id } }, { emailOtpSecret: '' }).toSafe();
-
-        if (error) {
-            throw new ServiceUnavailableException(error.message, error.stack);
+        if (!account.verifyToken) {
+            throw new UnauthorizedException('No OTP found. Please request a new OTP.');
         }
+
+        const verified = await this.validateRandomEmailOtp(token, account);
+
+        await this.clearEmailOtp(account.id);
 
         if (!getAuthTokens) {
             return { verified };
@@ -344,7 +378,7 @@ export class AuthService {
      * Vì JwtService hiện đã dc config để tự động có secret, vậy nên sẽ không thể dùng được publicKey để verify token.
      * Do đó cần phải khởi tạo thêm 1 đối tượng JwtService mới để verify token với publicKey.
      */
-    async getGoogleUserInfo(body: { code: string; codeVerifier: string }): Promise<GoogleIdTokenDecoded['payload']> {
+    private async getGoogleUserInfo(body: { code: string; codeVerifier: string }): Promise<GoogleIdTokenDecoded['payload']> {
         const tokenData = await this.getGoogleToken(body);
 
         const pubKey = await this.getGooglePublicKey(tokenData.id_token);
@@ -398,7 +432,7 @@ export class AuthService {
         return jwkToPem(key);
     }
 
-    async generateAccountTokens(accountEmail: string, accountId: number): Promise<AuthTokenDto> {
+    private async generateAccountTokens(accountEmail: string, accountId: number): Promise<AuthTokenDto> {
         const payload = {
             email: accountEmail,
             sub: accountId,
@@ -414,11 +448,22 @@ export class AuthService {
         };
     }
 
-    async storeRefreshToken(token: string, accountId: number): Promise<void> {
+    private async storeRefreshToken(token: string, accountId: number): Promise<void> {
         const expiresIn = parseInt(this.configService.get('REFRESH_TOKEN_EXPIRES_IN', { infer: true }), 10);
         const expiresAt = new Date(Date.now() + expiresIn * 24 * 60 * 60 * 1000);
 
-        const [error] = await this.refreshTokenRepository.upsert({ token, expiresAt, account: { id: accountId } }, ['account']).toSafe();
+        let refreshToken = await this.refreshTokenRepository.findOne({
+            where: { account: { id: accountId } },
+        });
+
+        if (refreshToken) {
+            refreshToken.token = token;
+            refreshToken.expiresAt = expiresAt;
+        } else {
+            refreshToken = this.refreshTokenRepository.create({ token, expiresAt, account: { id: accountId } });
+        }
+
+        const [error] = await this.refreshTokenRepository.save(refreshToken).toSafe();
 
         if (error) {
             throw new ServiceUnavailableException(error.message, error.stack);
@@ -428,7 +473,7 @@ export class AuthService {
     /**
      * Có thể sử dụng mà không cần bắt ngoại lệ.
      */
-    async hashPassword(password: string): Promise<string> {
+    private async hashPassword(password: string): Promise<string> {
         const [genSaltError, salt] = await genSalt().toSafe();
 
         if (genSaltError) {
@@ -454,7 +499,47 @@ export class AuthService {
         return response.redirect(`${appScheme}?${outgoingParams.toString()}`);
     }
 
-    handleVerifyOtp(token: string, secret: OTPAuth.Secret, accountEmail: string, period: number): boolean {
+    /**
+     * Validate random email OTP with expiration and rate limiting
+     */
+    async validateRandomEmailOtp(inputOtp: string, account: Account): Promise<boolean> {
+        const { verifyToken } = account;
+
+        if (!verifyToken.emailOtpCode || verifyToken.emailOtpCode.trim() === '') {
+            throw new UnauthorizedException('No OTP found. Please request a new OTP.');
+        }
+
+        if (!verifyToken.emailOtpExpiresAt || new Date() > verifyToken.emailOtpExpiresAt) {
+            await this.clearEmailOtp(account.id);
+            throw new UnauthorizedException('OTP has expired. Please request a new OTP.');
+        }
+
+        if (verifyToken.emailOtpAttempts >= OTP_CONFIG.MAX_EMAIL_OTP_ATTEMPTS) {
+            await this.clearEmailOtp(account.id);
+            throw new UnauthorizedException('Too many invalid attempts. Please request a new OTP.');
+        }
+
+        if (inputOtp !== verifyToken.emailOtpCode) {
+            await this.incrementEmailOtpAttempts(account.id);
+            throw new UnauthorizedException('Invalid OTP code');
+        }
+
+        return true;
+    }
+
+    /**
+     * Increment failed email OTP attempts
+     */
+    private async incrementEmailOtpAttempts(accountId: number): Promise<void> {
+        const FIELD_NAME: keyof VerifyToken = 'emailOtpAttempts';
+        const [error] = await this.verifyTokenRepository.increment({ account: { id: accountId } }, FIELD_NAME, 1).toSafe();
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+    }
+
+    handleVerifyTotp(token: string, secret: OTPAuth.Secret, accountEmail: string, period: number): boolean {
         const totp = new OTPAuth.TOTP({
             secret,
             label: accountEmail,
@@ -478,11 +563,19 @@ export class AuthService {
         return typeof result === 'number';
     }
 
-    async handleToggleEmailOtp(account: Account, toggleAction: boolean, secret?: string): Promise<void> {
+    /**
+     * Bật tắt toggle email OTP.
+     * Reset tất cả dữ liệu liên quan đến email OTP trong mọi trường hợp.
+     * các trường dữ liệu cần thiết để gửi email sẽ được khởi tạo tại method storeEmailOtp.
+     */
+    async handleToggleEmailOtp(account: Account, toggleAction: boolean): Promise<void> {
         const [error] = await this.accountRepository.manager
             .transaction(async transactionalEntityManager => {
                 account.enableEmailOtp = toggleAction;
-                account.verifyToken.emailOtpSecret = secret ?? '';
+
+                account.verifyToken.emailOtpCode = null;
+                account.verifyToken.emailOtpExpiresAt = null;
+                account.verifyToken.emailOtpAttempts = 0;
                 await transactionalEntityManager.save(Account, account);
             })
             .toSafe();
@@ -492,8 +585,23 @@ export class AuthService {
         }
     }
 
-    async handleUpdateEmailOtpSecret(account: Account, secret?: string): Promise<void> {
-        const [error] = await this.verifyTokenRepository.update({ account: { id: account.id } }, { emailOtpSecret: secret ?? '' }).toSafe();
+    /**
+     * Store email OTP for a user
+     * @param accountId The ID of the user account
+     * @param otpCode The OTP code to store
+     * @param expiresAt The expiration date of the OTP
+     */
+    private async storeEmailOtp(accountId: number, otpCode: string, expiresAt: Date): Promise<void> {
+        const [error] = await this.verifyTokenRepository
+            .update(
+                { account: { id: accountId } },
+                {
+                    emailOtpCode: otpCode,
+                    emailOtpExpiresAt: expiresAt,
+                    emailOtpAttempts: 0,
+                },
+            )
+            .toSafe();
 
         if (error) {
             throw new ServiceUnavailableException(error.message, error.stack);
@@ -501,19 +609,33 @@ export class AuthService {
     }
 
     /**
-     * Generate 6-digit OTP code using TOTP algorithm
+     * Clear email OTP data
      */
-    private generateEmailOtp(secretBase32: string, email: string): string {
-        const totp = new OTPAuth.TOTP({
-            secret: OTPAuth.Secret.fromBase32(secretBase32),
-            label: email,
-            issuer: 'Linker Chat',
-            algorithm: OTP_CONFIG.ALGORITHM,
-            digits: OTP_CONFIG.DIGITS,
-            period: OTP_CONFIG.EMAIL_OTP_PERIOD,
-        });
+    async clearEmailOtp(accountId: number): Promise<void> {
+        const [error] = await this.verifyTokenRepository
+            .update(
+                { account: { id: accountId } },
+                {
+                    emailOtpCode: null,
+                    emailOtpExpiresAt: null,
+                    emailOtpAttempts: 0,
+                },
+            )
+            .toSafe();
 
-        return totp.generate();
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+    }
+
+    /**
+     * Generate random 6-digit OTP code
+     */
+    private generateRandomEmailOtp(): string {
+        const min = 100000;
+        const max = 999999;
+
+        return Math.floor(Math.random() * (max - min + 1) + min).toString();
     }
 
     /**
@@ -541,7 +663,7 @@ export class AuthService {
 
     private generateOtpEmail(email: string, otpCode: string): string {
         const template = this.getEmailTemplate('otp-email');
-        const OTP_EXPIRATION_MINUTES = (OTP_CONFIG.EMAIL_OTP_PERIOD / 60).toString();
+        const OTP_EXPIRATION_MINUTES = (OTP_CONFIG.EMAIL_OTP_TTL_MS / 60).toString();
 
         return template
             .replace(/{{EMAIL}}/g, email)

@@ -63,6 +63,7 @@ describe('AuthController', () => {
                                 Promise.resolve({ message: enable ? 'OTP sent to email successfully' : 'Email OTP disabled successfully' }),
                             ),
                         validateEmailOtpToken: jest.fn().mockResolvedValue({ verified: true }),
+                        resendEmailOtp: jest.fn().mockResolvedValue({ message: 'New OTP sent to email successfully' }),
                         socialLogin: jest.fn(),
                         googleCallback: jest.fn(),
                         googleLogin: jest.fn(),
@@ -188,13 +189,22 @@ describe('AuthController', () => {
         });
 
         it('should validate TOTP token and return verification result', async (): Promise<void> => {
-            const validateTokenDto: ValidateTotpTokenDTO = { token: '123456' };
+            const validateTokenDto: ValidateTotpTokenDTO = { token: '123456', email: 'test@example.com', getAuthTokens: false };
             const spy = jest.spyOn(authService, 'validateTotpToken');
 
-            const response: TotpValidationResponseDto = await controller.validateTotpToken(mockAuthenticatedRequest, validateTokenDto);
+            const response: TotpValidationResponseDto = await controller.validateTotpToken(validateTokenDto);
 
             expect(response).toEqual(mockResponseData.validateTotp);
-            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, validateTokenDto.token);
+            expect(spy).toHaveBeenCalledWith(validateTokenDto);
+        });
+
+        it('should pass correct parameters to validate TOTP token service', async (): Promise<void> => {
+            const validateTokenDto: ValidateTotpTokenDTO = { token: '654321', email: 'test@example.com' };
+            const spy = jest.spyOn(authService, 'validateTotpToken');
+
+            await controller.validateTotpToken(validateTokenDto);
+
+            expect(spy).toHaveBeenCalledWith({ token: '654321', email: 'test@example.com' });
         });
     });
 
@@ -226,39 +236,41 @@ describe('AuthController', () => {
         });
 
         it('should validate email OTP token and return verification result', async (): Promise<void> => {
-            const validateOtpDto: ValidateEmailOtpDto = { token: '123456' };
+            const validateOtpDto: ValidateEmailOtpDto = { token: '123456', email: 'test@example.com', getAuthTokens: false };
             const spy = jest.spyOn(authService, 'validateEmailOtpToken');
 
-            const response: EmailOtpValidationResponseDto = await controller.validateEmailOtp(mockAuthenticatedRequest, validateOtpDto);
+            const response: EmailOtpValidationResponseDto = await controller.validateEmailOtp(validateOtpDto);
 
             expect(response).toEqual({ verified: true });
-            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, validateOtpDto.token);
+            expect(spy).toHaveBeenCalledWith({ email: 'test@example.com', getAuthTokens: false, token: '123456' });
         });
 
         it('should pass correct parameters to validate email OTP service', async (): Promise<void> => {
-            const validateOtpDto: ValidateEmailOtpDto = { token: '654321' };
+            const validateOtpDto: ValidateEmailOtpDto = { token: '123456', email: 'test@example.com', getAuthTokens: false };
             const spy = jest.spyOn(authService, 'validateEmailOtpToken');
 
-            await controller.validateEmailOtp(mockAuthenticatedRequest, validateOtpDto);
+            await controller.validateEmailOtp(validateOtpDto);
 
-            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, validateOtpDto.token);
-        });
-    });
-
-    describe('TOTP Operations (continued)', () => {
-        const mockAuthenticatedRequest = httpMocks.createRequest<AuthenticatedMockRequest>({
-            user: {
-                id: 1,
-            },
+            expect(spy).toHaveBeenCalledWith({ email: 'test@example.com', getAuthTokens: false, token: '123456' });
         });
 
-        it('should pass correct parameters to validate TOTP token service', async (): Promise<void> => {
-            const validateTokenDto: ValidateTotpTokenDTO = { token: '654321' };
-            const spy = jest.spyOn(authService, 'validateTotpToken');
+        it('should resend email OTP and return success message', async (): Promise<void> => {
+            const email = 'test@example.com';
+            const spy = jest.spyOn(authService, 'resendEmailOtp');
 
-            await controller.validateTotpToken(mockAuthenticatedRequest, validateTokenDto);
+            const response: EmailOtpResponseDto = await controller.resendEmailOtp({ email });
 
-            expect(spy).toHaveBeenCalledWith(1, '654321');
+            expect(response).toEqual({ message: 'New OTP sent to email successfully' });
+            expect(spy).toHaveBeenCalledWith(email);
+        });
+
+        it('should pass correct email parameter to resend email OTP service', async (): Promise<void> => {
+            const email = 'user@example.com';
+            const spy = jest.spyOn(authService, 'resendEmailOtp');
+
+            await controller.resendEmailOtp({ email });
+
+            expect(spy).toHaveBeenCalledWith('user@example.com');
         });
     });
 });
