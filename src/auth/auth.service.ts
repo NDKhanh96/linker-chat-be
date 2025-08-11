@@ -30,22 +30,8 @@ import { GoogleLoginErrorDto, LoginCredentialResDto } from '~/auth/dto';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
 import type { GoogleIdTokenDecoded, JwksResponse, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 import { User } from '~/user/entities';
+import { OtpConfigService } from '~/utils/configs';
 import type { EnvFileVariables } from '~utils/environment';
-
-// TODO: Sửa thành DI cho dễ test
-const OTP_CONFIG = {
-    ALGORITHM: 'SHA1',
-    DIGITS: 6,
-    TOTP_PERIOD: 30,
-    EMAIL_OTP_TTL_MS: 15 * 60 * 1000,
-    EMAIL_OTP_RESEND_COOLDOWN_MS: process.env.NODE_ENV === 'test' ? 0 : 60 * 1000,
-    MAX_EMAIL_OTP_ATTEMPTS: 5,
-    /**
-     * window: 1 để cho phép mã OTP có thể được sử dụng trước hoặc sau thời gian hiện tại 1 đơn vị thời gian.
-     * tránh việc độ trễ mạng cao hoặc máy chủ chậm khiến mã OTP không hợp lệ.
-     */
-    WINDOW: 1,
-} as const;
 
 @Injectable()
 export class AuthService {
@@ -70,6 +56,7 @@ export class AuthService {
         private readonly jwtService: JwtService,
         private readonly httpService: HttpService,
         private readonly mailerService: MailerService,
+        private readonly otpConfigService: OtpConfigService,
     ) {
         this.callbackUri = this.configService.get('BASE_URL', { infer: true }) + '/api/auth/google/callback';
         this.googleClientId = this.configService.get('GOOGLE_CLIENT_ID', { infer: true });
@@ -189,7 +176,12 @@ export class AuthService {
             throw new UnprocessableEntityException('TOTP is not enabled');
         }
 
-        const verified = this.handleVerifyTotp(token, OTPAuth.Secret.fromBase32(account.verifyToken.totpSecret), account.email, OTP_CONFIG.TOTP_PERIOD);
+        const verified = this.handleVerifyTotp(
+            token,
+            OTPAuth.Secret.fromBase32(account.verifyToken.totpSecret),
+            account.email,
+            this.otpConfigService.totpPeriod,
+        );
 
         if (!getAuthTokens) {
             return { verified };
@@ -236,8 +228,8 @@ export class AuthService {
      */
     async sendNewEmailOtp(account: Account): Promise<void> {
         if (account.verifyToken.emailOtpExpiresAt) {
-            const lastSentTime = new Date(account.verifyToken.emailOtpExpiresAt.getTime() - OTP_CONFIG.EMAIL_OTP_TTL_MS);
-            const cooldownEnd = new Date(lastSentTime.getTime() + OTP_CONFIG.EMAIL_OTP_RESEND_COOLDOWN_MS);
+            const lastSentTime = new Date(account.verifyToken.emailOtpExpiresAt.getTime() - this.otpConfigService.emailOtpTtlMs);
+            const cooldownEnd = new Date(lastSentTime.getTime() + this.otpConfigService.emailOtpResendCooldownMs);
 
             if (new Date() < cooldownEnd) {
                 const remainingSeconds = Math.ceil((cooldownEnd.getTime() - Date.now()) / 1000);
@@ -247,7 +239,7 @@ export class AuthService {
         }
 
         const otpCode = this.generateRandomEmailOtp();
-        const expiresAt = new Date(Date.now() + OTP_CONFIG.EMAIL_OTP_TTL_MS);
+        const expiresAt = new Date(Date.now() + this.otpConfigService.emailOtpTtlMs);
 
         await this.storeEmailOtp(account.id, otpCode, expiresAt);
         const [sendEmailError] = await this.sendOtpEmail(account.email, otpCode).toSafe();
@@ -514,7 +506,7 @@ export class AuthService {
             throw new UnauthorizedException('OTP has expired. Please request a new OTP.');
         }
 
-        if (verifyToken.emailOtpAttempts >= OTP_CONFIG.MAX_EMAIL_OTP_ATTEMPTS) {
+        if (verifyToken.emailOtpAttempts >= this.otpConfigService.maxEmailOtpAttempts) {
             await this.clearEmailOtp(account.id);
             throw new UnauthorizedException('Too many invalid attempts. Please request a new OTP.');
         }
@@ -544,13 +536,13 @@ export class AuthService {
             secret,
             label: accountEmail,
             issuer: 'Linker Chat',
-            algorithm: OTP_CONFIG.ALGORITHM,
-            digits: OTP_CONFIG.DIGITS,
+            algorithm: this.otpConfigService.algorithm,
+            digits: this.otpConfigService.digits,
             period,
         });
 
         const [error, result] = totp.validate.bind(totp).toSafe({
-            window: OTP_CONFIG.WINDOW,
+            window: this.otpConfigService.window,
             token,
         });
 
@@ -663,12 +655,11 @@ export class AuthService {
 
     private generateOtpEmail(email: string, otpCode: string): string {
         const template = this.getEmailTemplate('otp-email');
-        const OTP_EXPIRATION_MINUTES = (OTP_CONFIG.EMAIL_OTP_TTL_MS / 60).toString();
 
         return template
             .replace(/{{EMAIL}}/g, email)
             .replace(/{{OTP_CODE}}/g, otpCode)
-            .replace(/{{OTP_EXPIRATION}}/g, OTP_EXPIRATION_MINUTES);
+            .replace(/{{OTP_EXPIRATION}}/g, this.otpConfigService.emailOtpExpirationMinutes);
     }
 
     /**

@@ -15,6 +15,7 @@ import { AuthService } from '~/auth/auth.service';
 import { LoginCredentialResDto } from '~/auth/dto';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
 import type { QueryGoogleAuth, QueryGoogleCallback } from '~/types';
+import { OtpConfigService } from '~/utils/configs';
 
 import { mockAccountRepository, mockDto, mockRefreshTokenRepository, mockRequest, mockTotpData } from '~/__mocks__';
 
@@ -24,6 +25,7 @@ describe('AuthService', () => {
     let jwtService: JwtService;
     let httpService: HttpService;
     let mailerService: MailerService;
+    let otpConfigService: OtpConfigService;
     let accountRepository: Repository<Account>;
     let refreshTokenRepository: Repository<RefreshToken>;
     let verifyTokenRepository: Repository<VerifyToken>;
@@ -190,6 +192,35 @@ describe('AuthService', () => {
                         sendMail: jest.fn().mockResolvedValue([null, 'mock result']),
                     },
                 },
+                {
+                    provide: OtpConfigService,
+                    useValue: {
+                        get algorithm() {
+                            return 'SHA1';
+                        },
+                        get digits() {
+                            return 6;
+                        },
+                        get totpPeriod() {
+                            return 30;
+                        },
+                        get emailOtpTtlMs() {
+                            return 15 * 60 * 1000;
+                        },
+                        get emailOtpResendCooldownMs() {
+                            return 0;
+                        },
+                        get maxEmailOtpAttempts() {
+                            return 5;
+                        },
+                        get window() {
+                            return 1;
+                        },
+                        get emailOtpExpirationMinutes() {
+                            return '15';
+                        },
+                    },
+                },
             ],
         }).compile();
 
@@ -198,6 +229,7 @@ describe('AuthService', () => {
         jwtService = module.get<JwtService>(JwtService);
         httpService = module.get<HttpService>(HttpService);
         mailerService = module.get<MailerService>(MailerService);
+        otpConfigService = module.get<OtpConfigService>(OtpConfigService);
         accountRepository = module.get<Repository<Account>>(getRepositoryToken(Account));
         refreshTokenRepository = module.get<Repository<RefreshToken>>(getRepositoryToken(RefreshToken));
         verifyTokenRepository = module.get<Repository<VerifyToken>>(getRepositoryToken(VerifyToken));
@@ -209,6 +241,7 @@ describe('AuthService', () => {
         expect(jwtService).toBeDefined();
         expect(httpService).toBeDefined();
         expect(mailerService).toBeDefined();
+        expect(otpConfigService).toBeDefined();
         expect(accountRepository).toBeDefined();
         expect(refreshTokenRepository).toBeDefined();
         expect(verifyTokenRepository).toBeDefined();

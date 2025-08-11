@@ -14,6 +14,7 @@ import { DataSource } from 'typeorm';
 import { AppModule } from '~/app.module';
 import type { CreateAccountDto } from '~/auth/dto';
 import type { QueryGoogleAuth, QueryGoogleCallback } from '~/types';
+import { OtpConfigService } from '~/utils/configs';
 
 import { mockDto } from '~/__mocks__';
 
@@ -30,7 +31,35 @@ describe('Auth', (): void => {
     beforeAll(async (): Promise<void> => {
         const moduleRef: TestingModule = await Test.createTestingModule({
             imports: [AppModule],
-        }).compile();
+        })
+            .overrideProvider(OtpConfigService)
+            .useValue({
+                get algorithm() {
+                    return 'SHA1';
+                },
+                get digits() {
+                    return 6;
+                },
+                get totpPeriod() {
+                    return 30;
+                },
+                get emailOtpTtlMs() {
+                    return 15 * 60 * 1000;
+                },
+                get emailOtpResendCooldownMs() {
+                    return 0;
+                },
+                get maxEmailOtpAttempts() {
+                    return 5;
+                },
+                get window() {
+                    return 1;
+                },
+                get emailOtpExpirationMinutes() {
+                    return '15';
+                },
+            })
+            .compile();
 
         app = moduleRef.createNestApplication();
         app.useGlobalPipes(
@@ -298,7 +327,7 @@ describe('Auth', (): void => {
 
             expect(response.status).toBe(200);
             expect(response.body.message).toBe('OTP sent to email successfully');
-        });
+        }, 10000);
 
         it('should disable email OTP successfully', async () => {
             const response: SRes<{ message: string }> = await request(app.getHttpServer())
@@ -548,7 +577,7 @@ describe('Auth', (): void => {
 
             expect(response.status).toBe(200);
             expect(response.body.message).toBe('New OTP sent to email successfully');
-        });
+        }, 10000);
 
         it('should return 422 when email OTP is not enabled', async () => {
             /**
