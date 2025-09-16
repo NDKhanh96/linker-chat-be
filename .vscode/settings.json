@@ -21,5 +21,6 @@
         ".gitignore",
         ".env",
         ".env.test.local",
-    ]
+    ],
+    "postman.settings.dotenv-detection-notification-visibility": false
 }

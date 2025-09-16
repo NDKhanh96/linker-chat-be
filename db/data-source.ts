@@ -6,7 +6,7 @@ const dataSourceOptions: DataSourceOptions = {
     port: 3306,
     username: 'root',
     password: '',
-    database: 'demo_nestjs',
+    database: 'linker_chat',
     synchronize: false,
     entities: ['dist/**/*.entity.js'],
     migrations: ['dist/db/migrations/*.js'],
