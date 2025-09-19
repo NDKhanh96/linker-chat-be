@@ -20,7 +20,10 @@ import type {
     AuthTokenDto,
     CreateAccountDto,
     EmailOtpValidationResponseDto,
+    ForgotPasswordResponseDto,
     LoginDto,
+    ResetPasswordDto,
+    ResetPasswordResponseDto,
     TotpSecretResponseDto,
     TotpValidationResponseDto,
     ValidateEmailOtpDto,
@@ -367,6 +370,75 @@ export class AuthService {
     }
 
     /**
+     * Send forgot password email with reset token
+     */
+    async forgotPassword(email: string): Promise<ForgotPasswordResponseDto> {
+        const account = await this.findAccountByEmail(email);
+
+        if (account.verifyToken.forgotPasswordSecret) {
+            const parts = account.verifyToken.forgotPasswordSecret.split(':');
+
+            if (parts.length >= 2) {
+                const expiresAtStr = parts[1];
+                const lastSentTime = new Date(parseInt(expiresAtStr, 10) - this.otpConfigService.resetPasswordTtlMs);
+                const cooldownEnd = new Date(lastSentTime.getTime() + this.otpConfigService.resetPasswordResendCooldownMs);
+
+                if (new Date() < cooldownEnd) {
+                    const remainingSeconds = Math.ceil((cooldownEnd.getTime() - Date.now()) / 1000);
+
+                    throw new UnprocessableEntityException(`Please wait ${remainingSeconds} seconds before requesting a new password reset`);
+                }
+            }
+        }
+
+        const resetToken = this.generateResetToken();
+        const expiresAt = new Date(Date.now() + this.otpConfigService.resetPasswordTtlMs);
+
+        await this.storeResetToken(account.id, resetToken, expiresAt);
+
+        const [sendEmailError] = await this.sendResetPasswordEmail.bind(this).toSafeAsync(account.email, resetToken);
+
+        if (sendEmailError) {
+            throw new ServiceUnavailableException(sendEmailError.message, sendEmailError.stack);
+        }
+
+        return { message: 'Password reset instructions have been sent to your email' };
+    }
+
+    /**
+     * Reset password using reset token
+     */
+    async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<ResetPasswordResponseDto> {
+        const { email, token, newPassword, confirmPassword } = resetPasswordDto;
+
+        if (newPassword !== confirmPassword) {
+            throw new UnprocessableEntityException('New password and confirm password do not match');
+        }
+
+        const account = await this.findAccountByEmail(email);
+
+        await this.validateResetToken(account, token);
+
+        const hashedPassword = await this.hashPassword(newPassword);
+
+        const [error] = await this.accountRepository.manager
+            .transaction(async transactionalEntityManager => {
+                await transactionalEntityManager.update(Account, { id: account.id }, { password: hashedPassword });
+
+                await transactionalEntityManager.update(VerifyToken, { account: { id: account.id } }, { forgotPasswordSecret: '' });
+
+                await transactionalEntityManager.delete(RefreshToken, { account: { id: account.id } });
+            })
+            .toSafe();
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+
+        return { message: 'Password has been reset successfully' };
+    }
+
+    /**
      * Vì JwtService hiện đã dc config để tự động có secret, vậy nên sẽ không thể dùng được publicKey để verify token.
      * Do đó cần phải khởi tạo thêm 1 đối tượng JwtService mới để verify token với publicKey.
      */
@@ -700,5 +772,130 @@ export class AuthService {
         }
 
         return account;
+    }
+
+    /**
+     * Generate reset token for forgot password
+     */
+    private generateResetToken(): string {
+        return v4().replace(/-/g, '');
+    }
+
+    /**
+     * Store reset token for password reset
+     */
+    private async storeResetToken(accountId: number, resetToken: string, expiresAt: Date): Promise<void> {
+        const [error] = await this.verifyTokenRepository
+            .update(
+                { account: { id: accountId } },
+                {
+                    forgotPasswordSecret: `${resetToken}:${expiresAt.getTime()}:0`,
+                },
+            )
+            .toSafe();
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+    }
+
+    /**
+     * Validate reset token
+     */
+    private async validateResetToken(account: Account, inputToken: string): Promise<void> {
+        const { verifyToken } = account;
+
+        if (!verifyToken.forgotPasswordSecret || verifyToken.forgotPasswordSecret.trim() === '') {
+            throw new UnauthorizedException('No reset token found. Please request a new password reset.');
+        }
+
+        const [storedToken, expiresAtStr, attemptsStr = '0'] = verifyToken.forgotPasswordSecret.split(':');
+        const expiresAt = new Date(parseInt(expiresAtStr, 10));
+        const attempts = parseInt(attemptsStr, 10);
+
+        if (!storedToken || !expiresAtStr || new Date() > expiresAt) {
+            await this.clearResetToken(account.id);
+            throw new UnauthorizedException('Reset token has expired. Please request a new password reset.');
+        }
+
+        if (attempts >= this.otpConfigService.maxResetPasswordAttempts) {
+            await this.clearResetToken(account.id);
+            throw new UnauthorizedException('Too many invalid attempts. Please request a new password reset.');
+        }
+
+        if (inputToken !== storedToken) {
+            await this.incrementResetPasswordAttempts(account.id, storedToken, expiresAt, attempts + 1);
+            throw new UnauthorizedException('Invalid reset token');
+        }
+    }
+
+    /**
+     * Clear reset token
+     */
+    private async clearResetToken(accountId: number): Promise<void> {
+        const [error] = await this.verifyTokenRepository
+            .update(
+                { account: { id: accountId } },
+                {
+                    forgotPasswordSecret: '',
+                },
+            )
+            .toSafe();
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+    }
+
+    /**
+     * Increment failed reset password attempts
+     */
+    private async incrementResetPasswordAttempts(accountId: number, token: string, expiresAt: Date, attempts: number): Promise<void> {
+        const [error] = await this.verifyTokenRepository
+            .update(
+                { account: { id: accountId } },
+                {
+                    forgotPasswordSecret: `${token}:${expiresAt.getTime()}:${attempts}`,
+                },
+            )
+            .toSafe();
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+    }
+
+    /**
+     * Send reset password email
+     */
+    private async sendResetPasswordEmail(email: string, resetToken: string): Promise<void> {
+        const baseUrl = this.configService.get('BASE_URL', { infer: true });
+        const resetLink = `${baseUrl}/api/auth/reset-password?email=${encodeURIComponent(email)}&token=${resetToken}`;
+
+        const [error, html] = this.generateResetPasswordEmail.bind(this).toSafe(email, resetToken, resetLink);
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+
+        await this.mailerService.sendMail({
+            to: email,
+            subject: 'Reset Your Password - Linker Chat',
+            html,
+        });
+    }
+
+    /**
+     * Generate reset password email HTML
+     */
+    private generateResetPasswordEmail(email: string, resetToken: string, resetLink: string): string {
+        const template = this.getEmailTemplate('reset-password');
+        const expirationMinutes = this.otpConfigService.resetPasswordExpirationMinutes;
+
+        return template
+            .replace(/{{EMAIL}}/g, email)
+            .replace(/{{RESET_TOKEN}}/g, resetToken)
+            .replace(/{{RESET_LINK}}/g, resetLink)
+            .replace(/{{EXPIRATION_MINUTES}}/g, expirationMinutes);
     }
 }

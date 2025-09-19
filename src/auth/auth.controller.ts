@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Post, Query, Req, Res, UseGuards } fro
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiBody, ApiExcludeEndpoint, ApiOAuth2, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { type Response } from 'express';
+import { join } from 'path';
 
 import { AuthService } from '~/auth/auth.service';
 import {
@@ -9,10 +10,14 @@ import {
     CreateAccountDto,
     EmailOtpResponseDto,
     EmailOtpValidationResponseDto,
+    ForgotPasswordRequestDTO,
+    ForgotPasswordResponseDto,
     LoginCredentialResDto,
     LoginDto,
     RefreshTokenDto,
     ResendEmailDto,
+    ResetPasswordDto,
+    ResetPasswordResponseDto,
     SendEmailOtpDto,
     ToggleTotpDto,
     TotpSecretResponseDto,
@@ -128,5 +133,34 @@ export class AuthController {
     @ApiExcludeEndpoint()
     async googleLogin(@Body() body: { code: string; codeVerifier: string }): Promise<LoginCredentialResDto> {
         return this.authService.googleLogin(body);
+    }
+
+    @Post('forgot-password')
+    @HttpCode(200)
+    @ApiBody({ type: ForgotPasswordRequestDTO })
+    @ApiOperation({ summary: 'Send reset password email' })
+    @ApiResponse({ status: 200, description: 'Reset password email sent successfully', type: ForgotPasswordResponseDto })
+    @ApiResponse({ status: 401, description: 'User not found' })
+    async forgotPassword(@Body() body: ForgotPasswordRequestDTO): Promise<ForgotPasswordResponseDto> {
+        return this.authService.forgotPassword(body.email);
+    }
+
+    @Get('reset-password')
+    @ApiExcludeEndpoint()
+    getResetPasswordPage(@Res() res: Response) {
+        const filePath = join(__dirname, '../assets/web-template/reset-password.html');
+
+        res.sendFile(filePath);
+    }
+
+    @Post('reset-password')
+    @HttpCode(200)
+    @ApiBody({ type: ResetPasswordDto })
+    @ApiOperation({ summary: 'Reset password with token' })
+    @ApiResponse({ status: 200, description: 'Password reset successful', type: ResetPasswordResponseDto })
+    @ApiResponse({ status: 401, description: 'Invalid or expired reset token' })
+    @ApiResponse({ status: 422, description: 'Passwords do not match' })
+    async resetPassword(@Body() body: ResetPasswordDto): Promise<ResetPasswordResponseDto> {
+        return this.authService.resetPassword(body);
     }
 }
