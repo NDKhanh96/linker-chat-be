@@ -35,4 +35,10 @@ export const mockResponseData = {
     validateTotp: {
         verified: true,
     },
+    forgotPassword: {
+        message: 'Password reset instructions have been sent to your email',
+    },
+    resetPassword: {
+        message: 'Password has been reset successfully',
+    },
 };

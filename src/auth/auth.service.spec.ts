@@ -134,6 +134,7 @@ describe('AuthService', () => {
                                 const mockTransactionManager: Partial<EntityManager> = {
                                     update: jest.fn().mockResolvedValue({}),
                                     save: jest.fn().mockResolvedValue({}),
+                                    delete: jest.fn().mockResolvedValue({ affected: 1 }), // Thêm method delete
                                 };
 
                                 await callback(mockTransactionManager);
@@ -213,10 +214,22 @@ describe('AuthService', () => {
                         get maxEmailOtpAttempts() {
                             return 5;
                         },
+                        get resetPasswordTtlMs() {
+                            return 15 * 60 * 1000;
+                        },
+                        get resetPasswordResendCooldownMs() {
+                            return 60 * 1000;
+                        },
+                        get maxResetPasswordAttempts() {
+                            return 5;
+                        },
                         get window() {
                             return 1;
                         },
                         get emailOtpExpirationMinutes() {
+                            return '15';
+                        },
+                        get resetPasswordExpirationMinutes() {
                             return '15';
                         },
                     },
@@ -718,6 +731,141 @@ describe('AuthService', () => {
                     email,
                 },
             });
+        });
+    });
+
+    describe('Method: forgotPassword', () => {
+        it('should send forgot password email successfully', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.validAccount);
+
+            const result = await authService.forgotPassword('test@gmail.com');
+
+            expect(result).toEqual({ message: 'Password reset instructions have been sent to your email' });
+        });
+
+        it('should throw UnauthorizedException when account not found', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
+
+            await expect(authService.forgotPassword('notfound@gmail.com')).rejects.toThrow('Invalid credentials');
+        });
+
+        it('should throw UnprocessableEntityException when cooldown is active', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.accountWithCooldown);
+
+            await expect(authService.forgotPassword('cooldown@gmail.com')).rejects.toThrow('Please wait');
+        });
+
+        it('should allow new request after cooldown period expires', async () => {
+            const accountWithExpiredCooldown = {
+                ...mockTotpData.validAccount,
+                verifyToken: {
+                    ...mockTotpData.validAccount.verifyToken,
+                    forgotPasswordSecret: `oldToken:${Date.now() - 2 * 60 * 1000}:0`, // 2 minutes ago (past cooldown)
+                },
+            };
+
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(accountWithExpiredCooldown);
+
+            const result = await authService.forgotPassword('test@gmail.com');
+
+            expect(result).toEqual({ message: 'Password reset instructions have been sent to your email' });
+        });
+    });
+
+    describe('Method: resetPassword', () => {
+        it('should reset password successfully with valid token', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.accountWithResetToken);
+
+            const resetPasswordDto = {
+                email: 'reset@gmail.com',
+                token: 'validToken123',
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            };
+
+            const result = await authService.resetPassword(resetPasswordDto);
+
+            expect(result).toEqual({ message: 'Password has been reset successfully' });
+        });
+
+        it('should throw UnprocessableEntityException when passwords do not match', async () => {
+            const resetPasswordDto = {
+                email: 'reset@gmail.com',
+                token: 'validToken123',
+                newPassword: 'newPassword123',
+                confirmPassword: 'differentPassword',
+            };
+
+            await expect(authService.resetPassword(resetPasswordDto)).rejects.toThrow('New password and confirm password do not match');
+        });
+
+        it('should throw UnauthorizedException when account not found', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
+
+            const resetPasswordDto = {
+                email: 'notfound@gmail.com',
+                token: 'someToken',
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            };
+
+            await expect(authService.resetPassword(resetPasswordDto)).rejects.toThrow('Invalid credentials');
+        });
+
+        it('should throw UnauthorizedException when reset token is expired', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.accountWithExpiredResetToken);
+
+            const resetPasswordDto = {
+                email: 'expired-reset@gmail.com',
+                token: 'expiredToken123',
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            };
+
+            await expect(authService.resetPassword(resetPasswordDto)).rejects.toThrow('Reset token has expired');
+        });
+
+        it('should throw UnauthorizedException when max attempts reached', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.accountWithMaxAttempts);
+
+            const resetPasswordDto = {
+                email: 'max-attempts@gmail.com',
+                token: 'validToken456',
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            };
+
+            await expect(authService.resetPassword(resetPasswordDto)).rejects.toThrow('Too many invalid attempts');
+        });
+
+        it('should handle different email formats correctly', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.accountWithResetToken);
+
+            const resetPasswordDto = {
+                email: 'user.name+tag@example-domain.co.uk',
+                token: 'validToken123',
+                newPassword: 'NewP@ssw0rd!',
+                confirmPassword: 'NewP@ssw0rd!',
+            };
+
+            const result = await authService.resetPassword(resetPasswordDto);
+
+            expect(result).toEqual({ message: 'Password has been reset successfully' });
+        });
+
+        it('should handle special characters in password', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.accountWithResetToken);
+
+            const resetPasswordDto = {
+                email: 'test@example.com',
+                token: 'validToken123',
+                newPassword: 'P@ssw0rd!#$%^&*()',
+                confirmPassword: 'P@ssw0rd!#$%^&*()',
+            };
+
+            const result = await authService.resetPassword(resetPasswordDto);
+
+            expect(result).toEqual({ message: 'Password has been reset successfully' });
         });
     });
 });

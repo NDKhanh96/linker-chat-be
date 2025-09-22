@@ -139,8 +139,8 @@ export class AuthController {
     @HttpCode(200)
     @ApiBody({ type: ForgotPasswordRequestDTO })
     @ApiOperation({ summary: 'Send reset password email' })
-    @ApiResponse({ status: 200, description: 'Reset password email sent successfully', type: ForgotPasswordResponseDto })
-    @ApiResponse({ status: 401, description: 'User not found' })
+    @ApiResponse({ status: 200, description: 'Password reset instructions have been sent to your email', type: ForgotPasswordResponseDto })
+    @ApiResponse({ status: 401, description: 'Invalid credentials' })
     async forgotPassword(@Body() body: ForgotPasswordRequestDTO): Promise<ForgotPasswordResponseDto> {
         return this.authService.forgotPassword(body.email);
     }

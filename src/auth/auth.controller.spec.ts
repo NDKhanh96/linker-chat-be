@@ -64,6 +64,8 @@ describe('AuthController', () => {
                             ),
                         validateEmailOtpToken: jest.fn().mockResolvedValue({ verified: true }),
                         resendEmailOtp: jest.fn().mockResolvedValue({ message: 'New OTP sent to email successfully' }),
+                        forgotPassword: jest.fn().mockResolvedValue(mockResponseData.forgotPassword),
+                        resetPassword: jest.fn().mockResolvedValue(mockResponseData.resetPassword),
                         socialLogin: jest.fn(),
                         googleCallback: jest.fn(),
                         googleLogin: jest.fn(),
@@ -271,6 +273,81 @@ describe('AuthController', () => {
             await controller.resendEmailOtp({ email });
 
             expect(spy).toHaveBeenCalledWith('user@example.com');
+        });
+    });
+
+    describe('Forgot Password', () => {
+        it('should send forgot password email and return success message', async () => {
+            const email = 'test@example.com';
+            const expectedResponse = { message: 'Password reset instructions have been sent to your email' };
+
+            const result = await controller.forgotPassword({ email });
+
+            expect(result).toEqual(expectedResponse);
+        });
+
+        it('should handle different email formats', async () => {
+            const email = 'user.name+tag@example-domain.co.uk';
+            const expectedResponse = { message: 'Password reset instructions have been sent to your email' };
+
+            const result = await controller.forgotPassword({ email });
+
+            expect(result).toEqual(expectedResponse);
+        });
+
+        it('should call service with correct email parameter', async () => {
+            const email = 'specific@test.com';
+            const spy = jest.spyOn(authService, 'forgotPassword');
+
+            await controller.forgotPassword({ email });
+
+            expect(spy).toHaveBeenCalledWith(email);
+            expect(spy).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('Reset Password', () => {
+        it('should reset password successfully and return success message', async () => {
+            const resetPasswordDto = {
+                email: 'test@example.com',
+                token: 'valid-reset-token',
+                newPassword: 'newSecurePassword123',
+                confirmPassword: 'newSecurePassword123',
+            };
+            const expectedResponse = { message: 'Password has been reset successfully' };
+
+            const result = await controller.resetPassword(resetPasswordDto);
+
+            expect(result).toEqual(expectedResponse);
+        });
+
+        it('should pass complete DTO to reset password service', async () => {
+            const resetPasswordDto = {
+                email: 'user@example.com',
+                token: 'reset-token-123',
+                newPassword: 'myNewPassword456',
+                confirmPassword: 'myNewPassword456',
+            };
+            const spy = jest.spyOn(authService, 'resetPassword');
+
+            await controller.resetPassword(resetPasswordDto);
+
+            expect(spy).toHaveBeenCalledWith(resetPasswordDto);
+            expect(spy).toHaveBeenCalledTimes(1);
+        });
+
+        it('should handle reset password with special characters in password', async () => {
+            const resetPasswordDto = {
+                email: 'test@domain.com',
+                token: 'token-xyz',
+                newPassword: 'P@ssw0rd!#$%',
+                confirmPassword: 'P@ssw0rd!#$%',
+            };
+            const expectedResponse = { message: 'Password has been reset successfully' };
+
+            const result = await controller.resetPassword(resetPasswordDto);
+
+            expect(result).toEqual(expectedResponse);
         });
     });
 });

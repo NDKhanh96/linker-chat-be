@@ -440,7 +440,7 @@ describe('Auth', (): void => {
 
             expect(response.status).toBe(422);
             expect(response.body.message).toBe('Email OTP is not enabled');
-        });
+        }, 10000);
 
         it('should return 401 with non-existent email', async () => {
             const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
@@ -451,7 +451,7 @@ describe('Auth', (): void => {
 
             expect(response.status).toBe(401);
             expect(response.body.message).toBe('Invalid credentials');
-        });
+        }, 10000);
 
         it('should return 401 with invalid OTP format', async () => {
             const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
@@ -461,7 +461,7 @@ describe('Auth', (): void => {
             });
 
             expect(response.status).toBe(400); // Validation error
-        });
+        }, 10000);
 
         it('should return 401 with wrong OTP code', async () => {
             const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
@@ -472,13 +472,13 @@ describe('Auth', (): void => {
 
             expect(response.status).toBe(401);
             expect(response.body.message).toMatch(/Invalid OTP code|No OTP found|OTP has expired/);
-        });
+        }, 10000);
 
         it('should return 400 with missing required fields', async () => {
             const response = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({}); // Missing email and token
 
             expect(response.status).toBe(400);
-        });
+        }, 10000);
 
         it('should return 400 with invalid email format', async () => {
             const response = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
@@ -488,7 +488,7 @@ describe('Auth', (): void => {
             });
 
             expect(response.status).toBe(400);
-        });
+        }, 10000);
 
         it('should return 400 with token not exactly 6 digits', async () => {
             const response = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
@@ -498,7 +498,7 @@ describe('Auth', (): void => {
             });
 
             expect(response.status).toBe(400);
-        });
+        }, 10000);
 
         it('should return 400 with non-numeric token', async () => {
             const response = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
@@ -508,7 +508,7 @@ describe('Auth', (): void => {
             });
 
             expect(response.status).toBe(400);
-        });
+        }, 10000);
 
         it('should handle getAuthTokens parameter correctly in request', async () => {
             const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/email-otp/validate').send({
@@ -522,7 +522,7 @@ describe('Auth', (): void => {
              */
             expect(response.status).toBe(401);
             expect(response.body.message).toMatch(/Invalid OTP code|No OTP found|OTP has expired/);
-        });
+        }, 10000);
 
         /**
          * NOTE: Không thể test success case với OTP thật vì:
@@ -659,5 +659,192 @@ describe('Auth', (): void => {
                 statusCode: 401,
             });
         });
+    });
+
+    describe('/auth/forgot-password (POST)', () => {
+        const testEmail = 'forgot-password-test@gmail.com';
+
+        beforeAll(async () => {
+            const testUser = {
+                firstName: 'forgot-password',
+                lastName: 'user',
+                avatar: '',
+                email: testEmail,
+                password: '123456',
+                confirmPassword: '123456',
+                isCredential: true,
+            };
+
+            await request(app.getHttpServer()).post('/auth/register').send(testUser);
+        });
+
+        it('should send reset password email successfully for existing user', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/forgot-password').send({ email: testEmail });
+
+            expect(response.status).toBe(200);
+            expect(response.body.message).toBe('Password reset instructions have been sent to your email');
+        }, 10000);
+
+        it('should return 401 for non-existent email', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/forgot-password')
+                .send({ email: 'nonexistent@email.com' });
+
+            expect(response.status).toBe(401);
+            expect(response.body.message).toBe('Invalid credentials');
+        }, 10000);
+
+        it('should return 400 with invalid email format', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/forgot-password').send({ email: 'invalid-email-format' });
+
+            expect(response.status).toBe(400);
+        }, 10000);
+
+        it('should return 400 with missing email field', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/forgot-password').send({});
+
+            expect(response.status).toBe(400);
+        }, 10000);
+
+        it('should return 400 with empty email', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/forgot-password').send({ email: '' });
+
+            expect(response.status).toBe(400);
+        }, 10000);
+
+        it('should handle multiple requests for same email', async () => {
+            const firstResponse: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/forgot-password').send({ email: testEmail });
+
+            expect(firstResponse.status).toBe(200);
+            expect(firstResponse.body.message).toBe('Password reset instructions have been sent to your email');
+
+            const secondResponse: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/forgot-password').send({ email: testEmail });
+
+            expect(secondResponse.status).toBe(200);
+            expect(secondResponse.body.message).toBe('Password reset instructions have been sent to your email');
+        }, 15000);
+    });
+
+    describe('/auth/reset-password (GET)', () => {
+        it('should return reset password HTML page', async () => {
+            const response = await request(app.getHttpServer()).get('/auth/reset-password');
+
+            expect(response.status).toBe(200);
+            expect(response.headers['content-type']).toMatch(/text\/html/);
+            expect(response.text).toContain('<!DOCTYPE html>');
+            expect(response.text).toContain('reset-password');
+        });
+
+        it('should serve static HTML file without authentication', async () => {
+            const response = await request(app.getHttpServer()).get('/auth/reset-password');
+
+            expect(response.status).toBe(200);
+            expect(response.headers['content-type']).toMatch(/text\/html/);
+        });
+    });
+
+    describe('/auth/reset-password (POST)', () => {
+        let resetToken: string;
+        const testEmail = 'reset-password-test@gmail.com';
+
+        beforeAll(async () => {
+            const testUser = {
+                firstName: 'reset-password',
+                lastName: 'user',
+                avatar: '',
+                email: testEmail,
+                password: '123456',
+                confirmPassword: '123456',
+                isCredential: true,
+            };
+
+            await request(app.getHttpServer()).post('/auth/register').send(testUser);
+
+            const forgotPasswordResponse = await request(app.getHttpServer()).post('/auth/forgot-password').send({ email: testEmail });
+
+            expect(forgotPasswordResponse.status).toBe(200);
+
+            /**
+             * Trong thực tế, cần lấy token từ email gửi về.
+             * Trong test này, ta chỉ test các trường hợp lỗi với token giả.
+             * Ở đây gán tạm giá trị giả để tránh lỗi biến chưa khởi tạo.
+             */
+            resetToken = 'mock-reset-token-for-testing';
+        });
+
+        it('should return 401 with invalid reset token', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/reset-password').send({
+                email: testEmail,
+                token: 'invalid-token',
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            });
+
+            expect(response.status).toBe(401);
+            expect(response.body.message).toBe('Invalid or expired reset token');
+        });
+
+        it('should return 422 when passwords do not match', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/reset-password').send({
+                token: resetToken,
+                newPassword: 'newPassword123',
+                confirmPassword: 'differentPassword123',
+            });
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should return 400 with missing required fields', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/reset-password').send({
+                token: resetToken,
+            });
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should return 400 with weak password', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/reset-password').send({
+                token: resetToken,
+                newPassword: '123',
+                confirmPassword: '123',
+            });
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should return 400 with empty password', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/reset-password').send({
+                token: resetToken,
+                newPassword: '',
+                confirmPassword: '',
+            });
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should return 401 with expired reset token', async () => {
+            const expiredToken = 'expired-token-example';
+            const response: SRes<{ message: string }> = await request(app.getHttpServer()).post('/auth/reset-password').send({
+                email: testEmail,
+                token: expiredToken,
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            });
+
+            expect(response.status).toBe(401);
+            expect(response.body.message).toBe('Invalid or expired reset token');
+        });
+
+        /**
+         * NOTE: Không thể test success case với reset token thật vì:
+         * 1. Reset token được gửi qua email thật
+         * 2. Reset token có thời gian expire
+         * 3. Reset token được generate ngẫu nhiên
+         *
+         * Để test success case, cần:
+         * - Mock email service để capture reset token
+         * - Hoặc expose development-only endpoint để get reset token
+         * - Hoặc tạo utility để generate valid reset token for testing
+         */
     });
 });

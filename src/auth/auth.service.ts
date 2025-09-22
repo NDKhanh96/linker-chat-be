@@ -825,7 +825,7 @@ export class AuthService {
 
         if (inputToken !== storedToken) {
             await this.incrementResetPasswordAttempts(account.id, storedToken, expiresAt, attempts + 1);
-            throw new UnauthorizedException('Invalid reset token');
+            throw new UnauthorizedException('Invalid or expired reset token');
         }
     }
 
