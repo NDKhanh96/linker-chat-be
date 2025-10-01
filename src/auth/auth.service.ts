@@ -117,7 +117,7 @@ export class AuthService {
         let authToken: AuthTokenDto | undefined = undefined;
 
         if (!account.enableEmailOtp && !account.enableTotp) {
-            authToken = await this.generateAccountTokens(account.email, account.id);
+            authToken = await this.generateAccountTokens(account);
         }
 
         if (account.enableEmailOtp && !account.enableTotp) {
@@ -144,7 +144,7 @@ export class AuthService {
             throw new UnauthorizedException('Refresh Token Invalid');
         }
 
-        return this.generateAccountTokens(token.account.email, token.account.id);
+        return this.generateAccountTokens(token.account);
     }
 
     async toggleTotp(accountId: number, enable: boolean): Promise<TotpSecretResponseDto> {
@@ -190,7 +190,7 @@ export class AuthService {
             return { verified };
         }
 
-        const authToken = await this.generateAccountTokens(account.email, account.id);
+        const authToken = await this.generateAccountTokens(account);
 
         return { verified, authToken };
     }
@@ -271,7 +271,7 @@ export class AuthService {
             return { verified };
         }
 
-        const authToken = await this.generateAccountTokens(account.email, account.id);
+        const authToken = await this.generateAccountTokens(account);
 
         return { verified, authToken };
     }
@@ -364,7 +364,7 @@ export class AuthService {
             });
         }
 
-        const authToken: AuthTokenDto = await this.generateAccountTokens(account.email, account.id);
+        const authToken: AuthTokenDto = await this.generateAccountTokens(account);
 
         return plainToInstance(LoginCredentialResDto, { ...account, authToken }, { excludeExtraneousValues: true });
     }
@@ -496,20 +496,42 @@ export class AuthService {
         return jwkToPem(key);
     }
 
-    private async generateAccountTokens(accountEmail: string, accountId: number): Promise<AuthTokenDto> {
+    private async generateAccountTokens(account: Account): Promise<AuthTokenDto> {
+        const user = await this.getUserFromAccount(account);
+
         const payload = {
-            email: accountEmail,
-            sub: accountId,
+            email: account.email,
+            sub: account.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            avatar: user.avatar,
         };
         const accessToken: string = this.jwtService.sign(payload);
         const refreshToken: string = v4();
 
-        await this.storeRefreshToken(refreshToken, accountId);
+        await this.storeRefreshToken(refreshToken, account.id);
 
         return {
             accessToken,
             refreshToken,
         };
+    }
+
+    private async getUserFromAccount(account: Account) {
+        if (account.user) {
+            return account.user;
+        }
+
+        const [error, accountUser] = await this.accountRepository.findOne.bind(this.accountRepository).toSafeAsync({
+            where: { id: account.id },
+            relations: ['user'],
+        });
+
+        if (!accountUser || error) {
+            throw new UnauthorizedException('Invalid credentials');
+        }
+
+        return accountUser.user;
     }
 
     private async storeRefreshToken(token: string, accountId: number): Promise<void> {
