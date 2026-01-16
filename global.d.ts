@@ -41,6 +41,17 @@ declare global {
         toSafeAsync<Args extends unknown[], T>(this: (...args: Args) => Promise<T>, ...args: Args): Promise<[Error, null] | [null, T]>;
     }
 
+    type MergeTypes<TypesArray extends unknown[], Res = unknown> = TypesArray extends [infer First, ...infer Rest] ? MergeTypes<Rest, Res & First> : Res;
+
+    type OnlyFirst<F, S> = F & { [Key in keyof Omit<S, keyof F>]?: never };
+
+    /**
+     * Chỉ cho phép một trong các types được sử dụng.
+     */
+    type OneOf<TypesArray extends unknown[], Res = never, AllProperties = MergeTypes<TypesArray>> = TypesArray extends [infer First, ...infer Rest]
+        ? OneOf<Rest, Res | OnlyFirst<First, AllProperties>, AllProperties>
+        : Res;
+
     /**
      * Mở rộng interface của Supertest.Response để thêm thuộc tính body
      */
