@@ -25,6 +25,7 @@ import {
     ValidateEmailOtpDto,
     ValidateTotpTokenDTO,
 } from '~/auth/dto';
+import { ChangePasswordDto } from '~/auth/dto/change-password.dto';
 import { Account } from '~/auth/entities';
 import type { QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 import { ApiResponseOneOf } from '~utils/decorator';
@@ -162,5 +163,17 @@ export class AuthController {
     @ApiResponse({ status: 422, description: 'Passwords do not match' })
     async resetPassword(@Body() body: ResetPasswordDto): Promise<ResetPasswordResponseDto> {
         return this.authService.resetPassword(body);
+    }
+
+    @Post('change-password')
+    @HttpCode(200)
+    @UseGuards(AuthGuard('jwt'))
+    @ApiBody({ type: ChangePasswordDto })
+    @ApiOperation({ summary: 'Change password' })
+    @ApiResponse({ status: 200, description: 'Change password successful', type: ResetPasswordResponseDto })
+    @ApiResponse({ status: 401, description: 'Unauthorized' })
+    @ApiResponse({ status: 422, description: 'Passwords do not match' })
+    async changePassword(@Req() req: Express.AuthenticatedRequest, @Body() body: ChangePasswordDto): Promise<ResetPasswordResponseDto> {
+        return this.authService.changePassword(req.user.id, body);
     }
 }

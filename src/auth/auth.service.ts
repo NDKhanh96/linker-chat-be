@@ -30,6 +30,7 @@ import type {
     ValidateTotpTokenDTO,
 } from '~/auth/dto';
 import { GoogleLoginErrorDto, LoginCredentialResDto } from '~/auth/dto';
+import type { ChangePasswordDto } from '~/auth/dto/change-password.dto';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
 import type { GoogleIdTokenDecoded, JwksResponse, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 import { User } from '~/user/entities';
@@ -436,6 +437,53 @@ export class AuthService {
         }
 
         return { message: 'Password has been reset successfully' };
+    }
+
+    async changePassword(accountId: number, changePasswordDto: ChangePasswordDto): Promise<ResetPasswordResponseDto> {
+        const { oldPassword, newPassword, confirmPassword } = changePasswordDto;
+
+        if (newPassword !== confirmPassword) {
+            throw new UnprocessableEntityException('New password and confirm password do not match');
+        }
+
+        if (oldPassword === newPassword) {
+            throw new UnprocessableEntityException('New password must be different from old password');
+        }
+
+        const account = await this.accountRepository.findOne({
+            where: { id: accountId },
+            select: ['id', 'email', 'password'],
+        });
+
+        if (!account) {
+            throw new UnauthorizedException('Invalid credentials');
+        }
+
+        const [error, passwordMatch] = await compare(oldPassword, account.password).toSafe();
+
+        if (error) {
+            throw new ServiceUnavailableException(error.message, error.stack);
+        }
+
+        if (!passwordMatch) {
+            throw new UnauthorizedException('Current password is incorrect');
+        }
+
+        const hashedPassword = await this.hashPassword(newPassword);
+
+        const [updateError] = await this.accountRepository.manager
+            .transaction(async transactionalEntityManager => {
+                await transactionalEntityManager.update(Account, { id: account.id }, { password: hashedPassword });
+
+                await transactionalEntityManager.delete(RefreshToken, { account: { id: account.id } });
+            })
+            .toSafe();
+
+        if (updateError) {
+            throw new ServiceUnavailableException(updateError.message, updateError.stack);
+        }
+
+        return { message: 'Password has been changed successfully. Please login again.' };
     }
 
     /**
