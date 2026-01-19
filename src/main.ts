@@ -3,22 +3,33 @@
  */
 import '~utils/safe-execution-extension';
 
-import { ValidationPipe, type INestApplication } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import type { ExpressAdapter } from '@nestjs/platform-express';
-import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swagger';
-
+import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swagger';
+import { json, urlencoded } from 'express';
+import { join } from 'path';
+
 import { AppModule } from '~/app.module';
 import { swaggerPath, swaggerPathJson } from '~utils/constants';
 import type { EnvFileVariables } from '~utils/environment';
 
 async function bootstrap() {
-    const app: INestApplication<ExpressAdapter> = await NestFactory.create(AppModule);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule);
     const configService: ConfigService<EnvFileVariables, true> = app.get(ConfigService);
     const port: number = configService.get('APP_PORT');
 
-    app.setGlobalPrefix('api');
+    app.useStaticAssets(join(process.cwd(), 'uploads'), {
+        prefix: '/uploads/',
+    });
+
+    app.use(json({ limit: '6mb' }));
+    app.use(urlencoded({ extended: true, limit: '6mb' }));
+
+    app.setGlobalPrefix('api', {
+        exclude: ['/uploads/*path'],
+    });
 
     /**
      * - Tự động loại bỏ các trường không được khai báo trong DTO.
