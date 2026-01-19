@@ -1,8 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose, Type } from 'class-transformer';
-import { Column, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn, VersionColumn } from 'typeorm';
+import { Column, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, OneToOne, PrimaryGeneratedColumn, VersionColumn } from 'typeorm';
 
 import { Account } from '~/auth/entities';
+import { ConversationMember } from '~/conversations/entities';
+import { Message } from '~/messages/entities';
 
 /**
  * Account và User là liên hệ 1-1 với account là thực thể chính
@@ -71,6 +73,11 @@ export class User {
     @Column({ name: 'is_active', type: 'boolean', default: true })
     isActive: boolean;
 
+    @OneToMany(() => Message, message => message.sender)
+    messages: Message[];
+
+    @OneToMany(() => ConversationMember, cm => cm.user)
+    conversationMembers: ConversationMember[];
     /**
      * @Type để khi dùng plainToInstance lên User thì cũng sẽ có tác dụng lên class Account.
      * Vì Account giữ khoá ngoại nên không cần @JoinColumn
