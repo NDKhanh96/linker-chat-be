@@ -847,4 +847,170 @@ describe('Auth', (): void => {
          * - Hoặc tạo utility để generate valid reset token for testing
          */
     });
+
+    describe('/auth/change-password (POST)', () => {
+        let accessToken: string;
+        const testEmail = 'change-password-test@gmail.com';
+        const oldPassword = '123456';
+
+        beforeAll(async () => {
+            const testUser = {
+                firstName: 'change-password',
+                lastName: 'user',
+                avatar: '',
+                email: testEmail,
+                password: oldPassword,
+                confirmPassword: oldPassword,
+                isCredential: true,
+            };
+
+            await request(app.getHttpServer()).post('/auth/register').send(testUser);
+
+            const loginResponse: SRes<typeof mockDto.loginInfo.res.jwt> = await request(app.getHttpServer()).post('/auth/login').send({
+                email: testEmail,
+                password: oldPassword,
+            });
+
+            accessToken = loginResponse.body.authToken.accessToken;
+        });
+
+        it('should change password successfully with correct old password', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/change-password')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({
+                    oldPassword: oldPassword,
+                    newPassword: 'newPassword123',
+                    confirmPassword: 'newPassword123',
+                });
+
+            expect(response.status).toBe(200);
+            expect(response.body.message).toBe('Password has been changed successfully. Please login again.');
+        });
+
+        it('should return 401 without authentication token', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/change-password').send({
+                oldPassword: oldPassword,
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            });
+
+            expect(response.status).toBe(401);
+        });
+
+        it('should return 401 with invalid authentication token', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/change-password').set('Authorization', 'Bearer invalid-token').send({
+                oldPassword: oldPassword,
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            });
+
+            expect(response.status).toBe(401);
+        });
+
+        it('should return 401 when old password is incorrect', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/change-password')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({
+                    oldPassword: 'wrongPassword',
+                    newPassword: 'newPassword123',
+                    confirmPassword: 'newPassword123',
+                });
+
+            expect(response.status).toBe(401);
+            expect(response.body.message).toBe('Current password is incorrect');
+        });
+
+        it('should return 422 when new passwords do not match', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/change-password')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({
+                    oldPassword: oldPassword,
+                    newPassword: 'newPassword123',
+                    confirmPassword: 'differentPassword',
+                });
+
+            expect(response.status).toBe(422);
+            expect(response.body.message).toBe('New password and confirm password do not match');
+        });
+
+        it('should return 422 when new password is same as old password', async () => {
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/change-password')
+                .set('Authorization', `Bearer ${accessToken}`)
+                .send({
+                    oldPassword: oldPassword,
+                    newPassword: oldPassword,
+                    confirmPassword: oldPassword,
+                });
+
+            expect(response.status).toBe(422);
+            expect(response.body.message).toBe('New password must be different from old password');
+        });
+
+        it('should return 400 with missing required fields', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/change-password').set('Authorization', `Bearer ${accessToken}`).send({
+                oldPassword: oldPassword,
+            });
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should return 400 with weak new password', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/change-password').set('Authorization', `Bearer ${accessToken}`).send({
+                oldPassword: oldPassword,
+                newPassword: '123',
+                confirmPassword: '123',
+            });
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should return 400 with empty passwords', async () => {
+            const response = await request(app.getHttpServer()).post('/auth/change-password').set('Authorization', `Bearer ${accessToken}`).send({
+                oldPassword: '',
+                newPassword: '',
+                confirmPassword: '',
+            });
+
+            expect(response.status).toBe(400);
+        });
+
+        it('should handle special characters in new password', async () => {
+            // Register a new user for this specific test to avoid conflicts
+            const specialTestEmail = 'special-char-password@gmail.com';
+            const specialTestPassword = 'oldPass123';
+
+            await request(app.getHttpServer()).post('/auth/register').send({
+                firstName: 'special',
+                lastName: 'user',
+                avatar: '',
+                email: specialTestEmail,
+                password: specialTestPassword,
+                confirmPassword: specialTestPassword,
+                isCredential: true,
+            });
+
+            const loginResponse: SRes<typeof mockDto.loginInfo.res.jwt> = await request(app.getHttpServer()).post('/auth/login').send({
+                email: specialTestEmail,
+                password: specialTestPassword,
+            });
+
+            const specialAccessToken = loginResponse.body.authToken.accessToken;
+
+            const response: SRes<{ message: string }> = await request(app.getHttpServer())
+                .post('/auth/change-password')
+                .set('Authorization', `Bearer ${specialAccessToken}`)
+                .send({
+                    oldPassword: specialTestPassword,
+                    newPassword: 'N3w!P@ssw0rd#$%^&*()',
+                    confirmPassword: 'N3w!P@ssw0rd#$%^&*()',
+                });
+
+            expect(response.status).toBe(200);
+            expect(response.body.message).toBe('Password has been changed successfully. Please login again.');
+        });
+    });
 });

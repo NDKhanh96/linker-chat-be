@@ -868,4 +868,111 @@ describe('AuthService', () => {
             expect(result).toEqual({ message: 'Password has been reset successfully' });
         });
     });
+
+    describe('Method: changePassword', () => {
+        it('should change password successfully with correct old password', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.accountForChangePassword);
+
+            const changePasswordDto = {
+                oldPassword: '123456',
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            };
+
+            const result = await authService.changePassword(mockTotpData.accountForChangePassword.id, changePasswordDto);
+
+            expect(result).toEqual({ message: 'Password has been changed successfully. Please login again.' });
+        });
+
+        it('should throw UnprocessableEntityException when passwords do not match', async () => {
+            const changePasswordDto = {
+                oldPassword: '123456',
+                newPassword: 'newPassword123',
+                confirmPassword: 'differentPassword',
+            };
+
+            await expect(authService.changePassword(1, changePasswordDto)).rejects.toThrow('New password and confirm password do not match');
+        });
+
+        it('should throw UnprocessableEntityException when new password is same as old password', async () => {
+            const changePasswordDto = {
+                oldPassword: 'samePassword123',
+                newPassword: 'samePassword123',
+                confirmPassword: 'samePassword123',
+            };
+
+            await expect(authService.changePassword(1, changePasswordDto)).rejects.toThrow('New password must be different from old password');
+        });
+
+        it('should throw UnauthorizedException when account not found', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(null);
+
+            const changePasswordDto = {
+                oldPassword: 'oldPassword123',
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            };
+
+            await expect(authService.changePassword(999, changePasswordDto)).rejects.toThrow('Invalid credentials');
+        });
+
+        it('should throw UnauthorizedException when old password is incorrect', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.accountForChangePassword);
+
+            const changePasswordDto = {
+                oldPassword: 'wrongPassword',
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            };
+
+            await expect(authService.changePassword(mockTotpData.accountForChangePassword.id, changePasswordDto)).rejects.toThrow(
+                'Current password is incorrect',
+            );
+        });
+
+        it('should handle special characters in new password', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.accountForChangePassword);
+
+            const changePasswordDto = {
+                oldPassword: '123456',
+                newPassword: 'N3w!P@ssw0rd#$%^&*()',
+                confirmPassword: 'N3w!P@ssw0rd#$%^&*()',
+            };
+
+            const result = await authService.changePassword(mockTotpData.accountForChangePassword.id, changePasswordDto);
+
+            expect(result).toEqual({ message: 'Password has been changed successfully. Please login again.' });
+        });
+
+        it('should call accountRepository with correct select fields', async () => {
+            const findOneSpy = jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.accountForChangePassword);
+
+            const changePasswordDto = {
+                oldPassword: '123456',
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            };
+
+            await authService.changePassword(mockTotpData.accountForChangePassword.id, changePasswordDto);
+
+            expect(findOneSpy).toHaveBeenCalledWith({
+                where: { id: mockTotpData.accountForChangePassword.id },
+                select: ['id', 'email', 'password'],
+            });
+        });
+
+        it('should delete all refresh tokens after password change', async () => {
+            jest.spyOn(accountRepository, 'findOne').mockResolvedValue(mockTotpData.accountForChangePassword);
+
+            const changePasswordDto = {
+                oldPassword: '123456',
+                newPassword: 'newPassword123',
+                confirmPassword: 'newPassword123',
+            };
+
+            const result = await authService.changePassword(mockTotpData.accountForChangePassword.id, changePasswordDto);
+
+            expect(result).toEqual({ message: 'Password has been changed successfully. Please login again.' });
+        });
+    });
 });

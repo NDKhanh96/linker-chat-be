@@ -9,6 +9,7 @@ import type {
     EmailOtpValidationResponseDto,
     LoginCredentialResDto,
     RefreshTokenDto,
+    ResetPasswordResponseDto,
     SendEmailOtpDto,
     ToggleTotpDto,
     TotpSecretResponseDto,
@@ -16,6 +17,7 @@ import type {
     ValidateEmailOtpDto,
     ValidateTotpTokenDTO,
 } from '~/auth/dto';
+import { ChangePasswordDto } from '~/auth/dto/change-password.dto';
 import type { Account } from '~/auth/entities';
 import type { AuthenticatedMockRequest, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 
@@ -66,6 +68,7 @@ describe('AuthController', () => {
                         resendEmailOtp: jest.fn().mockResolvedValue({ message: 'New OTP sent to email successfully' }),
                         forgotPassword: jest.fn().mockResolvedValue(mockResponseData.forgotPassword),
                         resetPassword: jest.fn().mockResolvedValue(mockResponseData.resetPassword),
+                        changePassword: jest.fn().mockResolvedValue(mockResponseData.changePassword),
                         socialLogin: jest.fn(),
                         googleCallback: jest.fn(),
                         googleLogin: jest.fn(),
@@ -306,7 +309,34 @@ describe('AuthController', () => {
         });
     });
 
-    describe('Reset Password', () => {
+    describe('Get Reset Password Page - (GET)', () => {
+        it('should serve reset password HTML page', () => {
+            const res = httpMocks.createResponse();
+
+            res.sendFile = jest.fn();
+            const sendFileSpy = jest.spyOn(res, 'sendFile');
+
+            controller.getResetPasswordPage(res);
+
+            expect(sendFileSpy).toHaveBeenCalled();
+            expect(sendFileSpy).toHaveBeenCalledWith(expect.stringContaining('reset-password.html'));
+        });
+
+        it('should send file from correct assets path', () => {
+            const res = httpMocks.createResponse();
+
+            res.sendFile = jest.fn();
+            const sendFileSpy = jest.spyOn(res, 'sendFile');
+
+            controller.getResetPasswordPage(res);
+
+            const calledPath = sendFileSpy.mock.calls[0][0];
+
+            expect(calledPath).toContain('assets/web-template/reset-password.html');
+        });
+    });
+
+    describe('Reset Password - (POST)', () => {
         it('should reset password successfully and return success message', async () => {
             const resetPasswordDto = {
                 email: 'test@example.com',
@@ -348,6 +378,73 @@ describe('AuthController', () => {
             const result = await controller.resetPassword(resetPasswordDto);
 
             expect(result).toEqual(expectedResponse);
+        });
+    });
+
+    describe('Change Password', () => {
+        const mockAuthenticatedRequest = httpMocks.createRequest<AuthenticatedMockRequest>({
+            method: 'POST',
+            user: {
+                id: 123,
+            },
+        });
+
+        it('should change password successfully and return success message', async (): Promise<void> => {
+            const changePasswordDto: ChangePasswordDto = {
+                oldPassword: 'oldPassword123',
+                newPassword: 'newSecurePassword456',
+                confirmPassword: 'newSecurePassword456',
+            };
+            const expectedResponse: ResetPasswordResponseDto = { message: 'Password has been changed successfully' };
+            const spy = jest.spyOn(authService, 'changePassword');
+
+            const result = await controller.changePassword(mockAuthenticatedRequest, changePasswordDto);
+
+            expect(result).toEqual(expectedResponse);
+            expect(spy).toHaveBeenCalledWith(mockAuthenticatedRequest.user.id, changePasswordDto);
+        });
+
+        it('should pass correct user ID and DTO to change password service', async (): Promise<void> => {
+            const changePasswordDto: ChangePasswordDto = {
+                oldPassword: 'currentPass123',
+                newPassword: 'newStrongPass789',
+                confirmPassword: 'newStrongPass789',
+            };
+            const spy = jest.spyOn(authService, 'changePassword');
+
+            await controller.changePassword(mockAuthenticatedRequest, changePasswordDto);
+
+            expect(spy).toHaveBeenCalledWith(123, changePasswordDto);
+            expect(spy).toHaveBeenCalledTimes(1);
+        });
+
+        it('should handle change password with special characters', async (): Promise<void> => {
+            const changePasswordDto: ChangePasswordDto = {
+                oldPassword: 'Old@Pass123',
+                newPassword: 'N3w!P@ssw0rd#$%',
+                confirmPassword: 'N3w!P@ssw0rd#$%',
+            };
+            const expectedResponse: ResetPasswordResponseDto = { message: 'Password has been changed successfully' };
+
+            const result = await controller.changePassword(mockAuthenticatedRequest, changePasswordDto);
+
+            expect(result).toEqual(expectedResponse);
+        });
+
+        it('should use authenticated user ID from request', async (): Promise<void> => {
+            const customAuthRequest = httpMocks.createRequest<AuthenticatedMockRequest>({
+                user: { id: 456 },
+            });
+            const changePasswordDto: ChangePasswordDto = {
+                oldPassword: 'pass123',
+                newPassword: 'newPass456',
+                confirmPassword: 'newPass456',
+            };
+            const spy = jest.spyOn(authService, 'changePassword');
+
+            await controller.changePassword(customAuthRequest, changePasswordDto);
+
+            expect(spy).toHaveBeenCalledWith(456, changePasswordDto);
         });
     });
 });

@@ -41,4 +41,7 @@ export const mockResponseData = {
     resetPassword: {
         message: 'Password has been reset successfully',
     },
+    changePassword: {
+        message: 'Password has been changed successfully',
+    },
 };
