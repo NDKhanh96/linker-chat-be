@@ -61,6 +61,17 @@ declare global {
      * Bọc lấy type T để làm phẳng các thuộc tính của nó.
      */
     type Prettify<T> = { [K in keyof T]: T[K] } & {};
+
+    /**
+     * Sinh ra tất cả các đường dẫn (path) dạng string đến các thuộc tính lồng nhau của object T.
+     * Ví dụ:
+     *   type P = Path<{ a: { b: { c: number }, d: string }, e: boolean }>
+     *   // P = "a" | "a.b" | "a.b.c" | "a.d" | "e"
+     *
+     * Ứng dụng:
+     *   - Tạo autocomplete cho field path khi truy vấn dữ liệu động, mapping, v.v.
+     */
+    type Path<T> = T extends object ? { [K in keyof T & string]: T[K] extends object ? K | `${K}.${Path<T[K]>}` : K }[keyof T & string] : never;
 }
 
 export {};

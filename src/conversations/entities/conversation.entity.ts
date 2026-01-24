@@ -1,40 +1,50 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Expose, Type } from 'class-transformer';
-import { Column, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, OneToOne, PrimaryGeneratedColumn, VersionColumn } from 'typeorm';
+import { Expose } from 'class-transformer';
+import { Column, DeleteDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 
-import { Account } from '~/auth/entities';
 import { ConversationMember } from '~/conversations/entities';
 import { Message } from '~/messages/entities';
+import { User } from '~/user/entities';
 
-/**
- * Account và User là liên hệ 1-1 với account là thực thể chính
- */
-@Entity('users')
-export class User {
+export enum ConversationType {
+    DIRECT = 'direct',
+    GROUP = 'group',
+}
+
+@Entity('conversations')
+export class Conversation {
     @ApiProperty()
     @Expose()
     @PrimaryGeneratedColumn()
     id: number;
 
-    @ApiProperty()
-    @Expose()
-    @VersionColumn()
-    version: number;
+    @Column({
+        type: 'enum',
+        enum: ConversationType,
+    })
+    type: ConversationType;
 
-    @ApiProperty()
-    @Expose()
-    @Column({ name: 'first_name' })
-    firstName: string;
+    @Column({ nullable: true })
+    title: string;
 
-    @ApiProperty()
+    @ApiProperty({ nullable: true })
     @Expose()
-    @Column({ name: 'last_name' })
-    lastName: string;
-
-    @ApiProperty()
-    @Expose()
-    @Column()
+    @Column({ nullable: true })
     avatar: string;
+
+    @ApiProperty({ nullable: true })
+    @Expose()
+    @Column({ type: 'text', nullable: true })
+    description: string;
+
+    @ManyToOne(() => Message, { nullable: true })
+    @JoinColumn({ name: 'last_message_id' })
+    lastMessage: Message | null;
+
+    @ApiProperty({ type: 'string', format: 'date-time', nullable: true })
+    @Expose()
+    @Column({ name: 'last_message_at', type: 'timestamp', nullable: true })
+    lastMessageAt: Date | null;
 
     @ApiProperty()
     @Expose()
@@ -69,27 +79,13 @@ export class User {
     @JoinColumn({ name: 'deleted_by' })
     deletedBy: number | null;
 
-    @ApiProperty()
-    @Expose()
-    @Column({ name: 'is_active', type: 'boolean', default: true })
-    isActive: boolean;
+    @OneToMany(() => ConversationMember, m => m.conversation)
+    members: ConversationMember[];
 
-    @OneToMany(() => Message, message => message.sender)
+    @OneToMany(() => Message, m => m.conversation)
     messages: Message[];
 
-    @OneToMany(() => ConversationMember, cm => cm.user)
-    conversationMembers: ConversationMember[];
-    /**
-     * @Type để khi dùng plainToInstance lên User thì cũng sẽ có tác dụng lên class Account.
-     * Vì Account giữ khoá ngoại nên không cần @JoinColumn
-     */
-    @ApiProperty({ type: () => Account })
-    @Expose()
-    @Type(() => Account)
-    @OneToOne(() => Account, Account => Account.user)
-    account: Account;
-
-    constructor(partial: Partial<User>) {
+    constructor(partial: Partial<Message>) {
         Object.assign(this, partial);
     }
 }
