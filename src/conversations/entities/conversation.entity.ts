@@ -18,70 +18,77 @@ export class Conversation {
     @PrimaryGeneratedColumn()
     id: number;
 
-    @Column({
-        type: 'enum',
-        enum: ConversationType,
-    })
+    @Expose()
+    @ApiProperty({ enum: ConversationType })
+    @Column({ type: 'enum', enum: ConversationType })
     type: ConversationType;
 
+    @Expose()
+    @ApiProperty({ nullable: true })
     @Column({ nullable: true })
     title: string;
 
-    @ApiProperty({ nullable: true })
     @Expose()
+    @ApiProperty({ nullable: true })
     @Column({ nullable: true })
     avatar: string;
 
-    @ApiProperty({ nullable: true })
     @Expose()
+    @ApiProperty({ nullable: true })
     @Column({ type: 'text', nullable: true })
     description: string;
 
+    @Expose()
+    @ApiProperty({ type: () => Message, nullable: true })
     @ManyToOne(() => Message, { nullable: true })
     @JoinColumn({ name: 'last_message_id' })
     lastMessage: Message | null;
 
-    @ApiProperty({ type: 'string', format: 'date-time', nullable: true })
     @Expose()
+    @ApiProperty({ type: 'string', format: 'date-time', nullable: true })
     @Column({ name: 'last_message_at', type: 'timestamp', nullable: true })
     lastMessageAt: Date | null;
 
-    @ApiProperty()
     @Expose()
+    @ApiProperty()
     @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     createdAt: Date;
 
-    @ApiProperty({ type: 'string', format: 'date-time', nullable: true })
     @Expose()
+    @ApiProperty({ type: 'string', format: 'date-time', nullable: true })
     @Column({ name: 'updated_at', type: 'timestamp', nullable: true, onUpdate: 'CURRENT_TIMESTAMP' })
     updatedAt: Date | null;
 
-    @ApiProperty({ type: 'string', format: 'date-time', nullable: true })
     @Expose()
+    @ApiProperty({ type: 'string', format: 'date-time', nullable: true })
     @DeleteDateColumn({ name: 'deleted_at', type: 'timestamp', nullable: true })
     deletedAt: Date | null;
 
-    @ApiProperty({ type: 'number', nullable: true, description: 'ID of the user who created this user' })
     @Expose()
+    @ApiProperty({ type: 'number', nullable: true, description: 'ID of the user who created this user' })
     @ManyToOne(() => User)
     @JoinColumn({ name: 'created_by' })
     createdBy: number | null;
 
-    @ApiProperty({ type: 'number', nullable: true, description: 'ID of the user who updated this user' })
     @Expose()
+    @ApiProperty({ type: 'number', nullable: true, description: 'ID of the user who updated this user' })
     @ManyToOne(() => User)
     @JoinColumn({ name: 'updated_by' })
     updatedBy: number | null;
 
-    @ApiProperty({ type: 'number', nullable: true, description: 'ID of the user who deleted this user' })
     @Expose()
+    @ApiProperty({ type: 'number', nullable: true, description: 'ID of the user who deleted this user' })
     @ManyToOne(() => User)
     @JoinColumn({ name: 'deleted_by' })
     deletedBy: number | null;
 
+    @Expose()
+    @ApiProperty({ type: () => [ConversationMember] })
     @OneToMany(() => ConversationMember, m => m.conversation)
     members: ConversationMember[];
 
+    @Expose()
+    @ApiProperty({ type: () => [Message] })
     @OneToMany(() => Message, m => m.conversation)
     messages: Message[];
 
