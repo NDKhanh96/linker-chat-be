@@ -1,7 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateIf } from 'class-validator';
-
-import { MessageType } from '~/messages/entities';
+import { IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateMessageDto {
     @ApiProperty({
@@ -9,19 +7,8 @@ export class CreateMessageDto {
         example: 'Hello, how are you?',
     })
     @IsString()
-    @ValidateIf((o: CreateMessageDto) => o.type === MessageType.TEXT)
-    @IsNotEmpty()
-    content: string;
-
-    @ApiProperty({
-        enum: MessageType,
-        description: 'Type of message',
-        example: MessageType.TEXT,
-        default: MessageType.TEXT,
-    })
-    @IsEnum(MessageType)
     @IsOptional()
-    type?: MessageType;
+    content?: string;
 
     @ApiProperty({
         description: 'ID of the message being replied to',

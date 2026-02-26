@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 
 import { ConversationsService } from '~/conversations/conversations.service';
 import { CreateMessageDto, MessagesCursorPaginationResponseDto, UnreadCountResponseDto, UpdateMessageDto } from '~/messages/dto';
@@ -17,13 +17,31 @@ export class MessagesService {
     async sendMessage(conversationId: number, userId: number, dto: CreateMessageDto): Promise<Message> {
         await this.conversationsService.verifyMembership(conversationId, userId);
 
+        if (dto.replyToId) {
+            const replyToMessage = await this.messageRepository.findOne({
+                where: { id: dto.replyToId, deletedAt: IsNull() },
+                relations: ['conversation'],
+            });
+
+            if (!replyToMessage) {
+                throw new NotFoundException(`Message with ID ${dto.replyToId} not found or has been deleted`);
+            }
+
+            if (replyToMessage.conversation.id !== conversationId) {
+                throw new ForbiddenException('Cannot reply to a message from a different conversation');
+            }
+        }
+
         const message = new Message({
             content: dto.content,
-            type: dto.type ?? MessageType.TEXT,
+            type: MessageType.MESSAGE,
             createdBy: userId,
             conversation: { id: conversationId },
             sender: { id: userId },
             ...(dto.replyToId && { replyTo: { id: dto.replyToId } }),
+            ...(dto.attachmentIds?.length && {
+                attachments: dto.attachmentIds.map(id => ({ id })),
+            }),
         });
 
         const savedMessage = await this.messageRepository.save(message);
@@ -67,7 +85,7 @@ export class MessagesService {
         const last = data[data.length - 1];
         const nextCursor = last ? `${last.createdAt.toISOString()}_${last.id}` : null;
 
-        return new MessagesCursorPaginationResponseDto(data.reverse(), {
+        return new MessagesCursorPaginationResponseDto(data, {
             nextCursor,
             hasMore,
             limit,

@@ -63,16 +63,18 @@ export class ConversationsService {
 
     async getMyConversations(userId: number, page: number = 1, limit: number = 20): Promise<ConversationOffsetPaginationResponseDto> {
         const [data, total] = await this.conversationRepository
-            .createQueryBuilder()
-            .leftJoinAndSelect('Conversation.members', 'members')
+            .createQueryBuilder('conversation')
+            .leftJoinAndSelect('conversation.members', 'members')
             .leftJoinAndSelect('members.user', 'memberUser')
-            .leftJoinAndSelect('Conversation.lastMessage', 'lastMessage')
+            .leftJoinAndSelect('conversation.lastMessage', 'lastMessage')
             .leftJoinAndSelect('lastMessage.sender', 'messageSender')
-            .innerJoin('Conversation.members', 'userMember', 'userMember.userId = :userId', { userId })
-            .where('Conversation.deletedAt IS NULL')
+            .innerJoin('conversation.members', 'userMember', 'userMember.userId = :userId', { userId })
+            .where('conversation.deletedAt IS NULL')
             .andWhere('userMember.deletedAt IS NULL')
-            .orderBy('Conversation.lastMessageAt', 'DESC', 'NULLS LAST')
-            .addOrderBy('Conversation.createdAt', 'DESC')
+            .addSelect('ISNULL(conversation.last_message_at)', 'isNullLastMessage')
+            .orderBy('isNullLastMessage', 'ASC')
+            .addOrderBy('conversation.lastMessageAt', 'DESC')
+            .addOrderBy('conversation.createdAt', 'DESC')
             .skip((page - 1) * limit)
             .take(limit)
             .getManyAndCount();

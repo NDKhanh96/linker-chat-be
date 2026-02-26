@@ -2,14 +2,19 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Expose } from 'class-transformer';
 import { Column, DeleteDateColumn, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, type DeepPartial } from 'typeorm';
 
+import { Attachment } from '~/attachments/entities';
 import { Conversation } from '~/conversations/entities';
-import { Attachment } from '~/messages/entities';
 import { User } from '~/user/entities';
 
+/**
+ * Message là tin nhắn trong cuộc trò chuyện, có thể là tin nhắn văn bản, tin nhắn hệ thống (ví dụ: "User joined"), hoặc tin nhắn có tệp đính kèm.
+ * - Text, attachments, or both: Một tin nhắn có thể chỉ chứa văn bản, chỉ chứa tệp đính kèm, hoặc cả hai. Điều này cho phép linh hoạt trong việc gửi tin nhắn.
+ *
+ * System là loại tin nhắn đặc biệt do hệ thống tạo ra để thông báo các sự kiện như người dùng tham gia hoặc rời khỏi cuộc trò chuyện. Chúng không có người gửi cụ thể và thường có nội dung cố định.
+ * - System messages: Thông báo hệ thống (ví dụ: "User joined")
+ */
 export enum MessageType {
-    TEXT = 'text',
-    IMAGE = 'image',
-    FILE = 'file',
+    MESSAGE = 'message',
     SYSTEM = 'system',
 }
 
@@ -38,7 +43,7 @@ export class Message {
     @Column({
         type: 'enum',
         enum: MessageType,
-        default: MessageType.TEXT,
+        default: MessageType.MESSAGE,
     })
     type: MessageType;
 

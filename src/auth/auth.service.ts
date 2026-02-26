@@ -32,7 +32,7 @@ import type {
 import { GoogleLoginErrorDto, LoginCredentialResDto } from '~/auth/dto';
 import type { ChangePasswordDto } from '~/auth/dto/change-password.dto';
 import { Account, RefreshToken, VerifyToken } from '~/auth/entities';
-import type { GoogleIdTokenDecoded, JwksResponse, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
+import type { GoogleIdTokenDecoded, JwksResponse, JwtPayload, QueryGoogleAuth, QueryGoogleCallback } from '~/types';
 import { User } from '~/user/entities';
 import { OtpConfigService } from '~/utils/configs';
 import type { EnvFileVariables } from '~utils/environment';
@@ -547,7 +547,7 @@ export class AuthService {
     private async generateAccountTokens(account: Account): Promise<AuthTokenDto> {
         const user = await this.getUserFromAccount(account);
 
-        const payload = {
+        const payload: JwtPayload = {
             email: account.email,
             sub: account.id,
             firstName: user.firstName,

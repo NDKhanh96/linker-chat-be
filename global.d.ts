@@ -46,11 +46,41 @@ declare global {
     type OnlyFirst<F, S> = F & { [Key in keyof Omit<S, keyof F>]?: never };
 
     /**
-     * Chỉ cho phép một trong các types được sử dụng.
+     * Chỉ cho phép một trong các types được sử dụng (dạng array).
+     * Sử dụng recursive pattern với MergeTypes - phù hợp cho nhiều types phức tạp.
+     *
+     * Ưu điểm: Xử lý tốt với nhiều types (>2), kiểm tra toàn bộ thuộc tính
+     * Nhược điểm: Performance thấp hơn với types đơn giản
+     *
+     * @example
+     * type Config = OneOfArray<[
+     *   { url: string },
+     *   { port: number },
+     *   { socket: string }
+     * ]>;
      */
-    type OneOf<TypesArray extends unknown[], Res = never, AllProperties = MergeTypes<TypesArray>> = TypesArray extends [infer First, ...infer Rest]
-        ? OneOf<Rest, Res | OnlyFirst<First, AllProperties>, AllProperties>
+    type OneOfArray<TypesArray extends unknown[], Res = never, AllProperties = MergeTypes<TypesArray>> = TypesArray extends [infer First, ...infer Rest]
+        ? OneOfArray<Rest, Res | OnlyFirst<First, AllProperties>, AllProperties>
         : Res;
+
+    type Without<T, U> = { [P in Exclude<keyof T, keyof U>]?: never };
+
+    type XOR<T, U> = T | U extends object ? (Without<T, U> & U) | (Without<U, T> & T) : T | U;
+
+    /**
+     * Chỉ cho phép một trong các types được sử dụng (dạng XOR).
+     * Sử dụng XOR pattern - đơn giản và hiệu quả cho 2-3 types.
+     *
+     * Ưu điểm: Code đơn giản, performance tốt, autocomplete tốt hơn
+     * Nhược điểm: Phức tạp khi dùng với >3 types
+     *
+     * @example
+     * type Auth = OneOf<[
+     *   { username: string; password: string },
+     *   { token: string }
+     * ]>;
+     */
+    type OneOf<T extends unknown[]> = T extends [infer A, infer B, ...infer Rest] ? OneOf<[XOR<A, B>, ...Rest]> : T extends [infer Only] ? Only : never;
 
     /**
      * Mở rộng interface của Supertest.Response để thêm thuộc tính body
