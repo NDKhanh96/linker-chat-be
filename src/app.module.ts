@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AttachmentsModule } from '~/attachments/attachments.module';
 import { AuthModule } from '~/auth/auth.module';
+import { ChatModule } from '~/chat/chat.module';
 import { ConversationsModule } from '~/conversations/conversations.module';
 import { MessagesModule } from '~/messages/messages.module';
 import { UserModule } from '~/user/user.module';
@@ -22,6 +23,7 @@ import { ConfigServiceModule, DatabaseConfigModule, HttpConfigModule, JwtConfigM
         ConversationsModule,
         MessagesModule,
         AttachmentsModule,
+        ChatModule,
     ],
     controllers: [],
     providers: [],
