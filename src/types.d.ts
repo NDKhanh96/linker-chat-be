@@ -1,8 +1,12 @@
 import type { Request } from 'express';
+import type { DefaultEventsMap, Server, Socket } from 'socket.io';
 
 export type JwtPayload = {
     email: string;
     sub: number;
+    firstName: string;
+    lastName: string;
+    avatar: string;
 };
 
 export type QueryGoogleAuth = Record<'code_challenge' | 'code_challenge_method' | 'redirect_uri' | 'response_type' | 'state' | 'scope', string> & {
@@ -51,3 +55,13 @@ export type GoogleIdTokenDecoded = {
 type AuthenticatedMockRequest = Request & {
     user: Express.User;
 };
+
+type SocketData = {
+    accountId: number;
+    user: Omit<JwtPayload, 'sub'> & { accountId: number };
+    conversationIds?: number[];
+};
+
+export type AuthSocket = Socket<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData> & { handshake: { auth: { token: string } } };
+
+export type AuthServer = Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData>;

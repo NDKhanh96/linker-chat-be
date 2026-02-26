@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 import { AttachmentsModule } from '~/attachments/attachments.module';
 import { AuthModule } from '~/auth/auth.module';
+import { ChatModule } from '~/chat/chat.module';
 import { ConversationsModule } from '~/conversations/conversations.module';
 import { MessagesModule } from '~/messages/messages.module';
 import { UserModule } from '~/user/user.module';
@@ -13,6 +15,7 @@ import { ConfigServiceModule, DatabaseConfigModule, HttpConfigModule, JwtConfigM
      */
     imports: [
         ConfigServiceModule,
+        EventEmitterModule.forRoot(),
         DatabaseConfigModule,
         HttpConfigModule,
         JwtConfigModule,
@@ -22,6 +25,7 @@ import { ConfigServiceModule, DatabaseConfigModule, HttpConfigModule, JwtConfigM
         ConversationsModule,
         MessagesModule,
         AttachmentsModule,
+        ChatModule,
     ],
     controllers: [],
     providers: [],
