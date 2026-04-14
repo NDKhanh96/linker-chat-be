@@ -80,10 +80,10 @@ export class Message {
     @JoinColumn({ name: 'deleted_by' })
     deletedBy: number | null;
 
-    @ApiProperty()
+    @ApiProperty({ type: 'string', nullable: true })
     @Expose()
     @Column({ type: 'text', nullable: true })
-    content: string;
+    content: string | null;
 
     @ApiProperty()
     @Expose()
@@ -95,13 +95,13 @@ export class Message {
     @Column({ name: 'edited_at', type: 'timestamp', nullable: true })
     editedAt: Date | null;
 
-    @ApiProperty()
+    @ApiProperty({ type: () => Message, nullable: true })
     @Expose()
     @ManyToOne(() => Message, { nullable: true })
     @JoinColumn({ name: 'reply_to' })
-    replyTo: Message;
+    replyTo: Message | null;
 
-    @ApiProperty()
+    @ApiProperty({ type: () => [Attachment] })
     @Expose()
     @OneToMany(() => Attachment, a => a.message)
     attachments: Attachment[];

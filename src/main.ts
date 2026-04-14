@@ -3,9 +3,9 @@
  */
 import '~utils/safe-execution-extension';
 
-import { ValidationPipe } from '@nestjs/common';
+import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
@@ -17,8 +17,8 @@ import type { EnvFileVariables } from '~utils/environment';
 
 async function bootstrap() {
     const app = await NestFactory.create<NestExpressApplication>(AppModule);
-    const configService: ConfigService<EnvFileVariables, true> = app.get(ConfigService);
-    const port: number = configService.get('APP_PORT');
+    const configService = app.get<ConfigService<EnvFileVariables, true>>(ConfigService);
+    const port = configService.get<number>('APP_PORT');
 
     app.useStaticAssets(join(process.cwd(), 'uploads'), {
         prefix: '/uploads/',
@@ -46,6 +46,8 @@ async function bootstrap() {
         }),
     );
 
+    app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+
     const config: Omit<OpenAPIObject, 'paths'> = new DocumentBuilder()
         .setTitle('Linker Chat')
         .setVersion('1.0')
@@ -71,6 +73,6 @@ async function bootstrap() {
         jsonDocumentUrl: swaggerPathJson,
     });
 
-    await app.listen(port);
+    await app.listen(port, '0.0.0.0');
 }
 void bootstrap();

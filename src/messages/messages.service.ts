@@ -5,6 +5,7 @@ import { IsNull, Repository } from 'typeorm';
 import { ConversationsService } from '~/conversations/conversations.service';
 import { CreateMessageDto, MessagesCursorPaginationResponseDto, UnreadCountResponseDto, UpdateMessageDto } from '~/messages/dto';
 import { Message, MessageType } from '~/messages/entities';
+import { EventBus } from '~utils/configs';
 
 @Injectable()
 export class MessagesService {
@@ -12,6 +13,7 @@ export class MessagesService {
         @InjectRepository(Message)
         private readonly messageRepository: Repository<Message>,
         private readonly conversationsService: ConversationsService,
+        private readonly eventBus: EventBus,
     ) {}
 
     async sendMessage(conversationId: number, userId: number, dto: CreateMessageDto): Promise<Message> {
@@ -48,7 +50,11 @@ export class MessagesService {
 
         await this.conversationsService.updateLastMessage(conversationId, savedMessage.id, userId);
 
-        return this.findOne(savedMessage.id, userId);
+        const result = await this.findOne(savedMessage.id, userId);
+
+        this.eventBus.emit({ type: 'message.sent', payload: { message: result, conversationId } });
+
+        return result;
     }
 
     async getMessages(conversationId: number, userId: number, cursor?: string, limit: number = 20): Promise<MessagesCursorPaginationResponseDto> {
