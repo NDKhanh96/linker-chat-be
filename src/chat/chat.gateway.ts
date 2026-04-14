@@ -1,20 +1,9 @@
 import { Logger, UseFilters } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
-import {
-    ConnectedSocket,
-    MessageBody,
-    OnGatewayConnection,
-    OnGatewayDisconnect,
-    OnGatewayInit,
-    SubscribeMessage,
-    WebSocketGateway,
-    WebSocketServer,
-} from '@nestjs/websockets';
+import { OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 
-import { ReadMessageDto, SendMessageDto, TypingDto } from '~/chat/dto';
-import { ChatConnectionService, ChatOrchestrationService } from '~/chat/services';
+import { ChatConnectionService } from '~/chat/services';
 import type { AuthServer, AuthSocket } from '~/types';
-import { WsExceptionFilter, type EventPayload } from '~utils/common';
+import { WsExceptionFilter } from '~utils/common';
 
 // TODO: unread:updated
 // TODO: message:updated, message:deleted
@@ -33,10 +22,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
     private readonly logger = new Logger(ChatGateway.name);
 
-    constructor(
-        private readonly chatConnectionService: ChatConnectionService,
-        private readonly chatOrchestrationService: ChatOrchestrationService,
-    ) {}
+    constructor(private readonly chatConnectionService: ChatConnectionService) {}
 
     afterInit(server: AuthServer) {
         server.use(this.chatConnectionService.createMiddleware());
@@ -57,59 +43,5 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         } catch (error) {
             this.logger.error(error instanceof Error ? error.message : 'Handle disconnect WebSocket error');
         }
-    }
-
-    @SubscribeMessage('message:send')
-    async handleSendMessage(@ConnectedSocket() client: AuthSocket, @MessageBody() payload: SendMessageDto) {
-        const accountId = client.data.accountId;
-
-        const message = await this.chatOrchestrationService.sendMessage(accountId, payload);
-
-        return { success: true, message };
-    }
-
-    @OnEvent('message.sent')
-    handleMessageSentEvent(payload: EventPayload<'message.sent'>) {
-        this.server.to(`conversation:${payload.conversationId}`).emit('message:receive', payload);
-    }
-
-    @SubscribeMessage('typing:start')
-    handleTypingStart(@ConnectedSocket() client: AuthSocket, @MessageBody() payload: TypingDto) {
-        const accountId = client.data.accountId;
-
-        client.to(`conversation:${payload.conversationId}`).emit('typing:start', {
-            accountId,
-            conversationId: payload.conversationId,
-        });
-    }
-
-    @SubscribeMessage('typing:stop')
-    handleTypingStop(@ConnectedSocket() client: AuthSocket, @MessageBody() payload: TypingDto) {
-        const accountId = client.data.accountId;
-
-        client.to(`conversation:${payload.conversationId}`).emit('typing:stop', {
-            accountId,
-            conversationId: payload.conversationId,
-        });
-    }
-
-    @SubscribeMessage('message:read')
-    handleMessageRead(@ConnectedSocket() client: AuthSocket, @MessageBody() payload: ReadMessageDto) {
-        const accountId = client.data.accountId;
-
-        client.to(`conversation:${payload.conversationId}`).emit('message:read', {
-            accountId,
-            conversationId: payload.conversationId,
-            messageId: payload.messageId,
-        });
-    }
-
-    @SubscribeMessage('conversation:join')
-    async handleJoinConversation(@ConnectedSocket() client: AuthSocket, @MessageBody() payload: { conversationId: number }) {
-        const accountId = client.data.accountId;
-
-        await this.chatOrchestrationService.joinConversation(accountId, payload.conversationId);
-
-        await client.join(`conversation:${payload.conversationId}`);
     }
 }
