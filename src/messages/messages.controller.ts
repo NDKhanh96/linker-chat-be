@@ -5,7 +5,7 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 import { CreateMessageDto, MessagesCursorPaginationResponseDto, UnreadCountResponseDto, UpdateMessageDto } from '~/messages/dto';
 import { Message } from '~/messages/entities';
 import { MessagesService } from '~/messages/messages.service';
-import type { CursorPaginationQueryDto } from '~utils/common/dto';
+import { CursorPaginationQueryDto } from '~utils/common/dto';
 
 @ApiTags('Messages')
 @ApiBearerAuth()

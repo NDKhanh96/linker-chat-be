@@ -1,16 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsNumber, IsOptional, Max, Min } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class CursorPaginationQueryDto {
     @ApiProperty({
-        description: 'Cursor for pagination (message ID)',
-        example: 123,
+        description: 'Cursor for pagination',
+        example: '2026-04-14T07:19:04.000Z_53',
         required: false,
     })
     @IsOptional()
-    @Type(() => Number)
-    @IsNumber()
+    @IsString()
     cursor?: string;
 
     @ApiProperty({
