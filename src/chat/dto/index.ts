@@ -1,21 +1,10 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsNumber } from 'class-validator';
+import { CreateMessageDto } from '~/messages/dto';
 
-export class SendMessageDto {
+export class SendMessageDto extends CreateMessageDto {
     @IsNumber()
     @IsNotEmpty()
     conversationId: number;
-
-    @IsString()
-    @IsNotEmpty()
-    content?: string;
-
-    @IsNumber()
-    @IsOptional()
-    replyToId?: number;
-
-    @IsNumber({}, { each: true })
-    @IsOptional()
-    attachmentIds?: number[];
 }
 
 export class TypingDto {

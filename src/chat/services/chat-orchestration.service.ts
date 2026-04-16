@@ -15,6 +15,7 @@ export class ChatOrchestrationService {
             content: payload.content,
             attachmentIds: payload.attachmentIds,
             replyToId: payload.replyToId,
+            tempId: payload.tempId,
         });
     }
 

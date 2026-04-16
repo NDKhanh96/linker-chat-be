@@ -27,4 +27,12 @@ export class CreateMessageDto {
     })
     @IsOptional()
     attachmentIds?: number[];
+
+    @ApiProperty({
+        description: 'Vì FE sẽ cache bằng optimistic nên sẽ phải gửi thêm tempId để client nhận biết dc response nào tương ứng với cache nào để update',
+        example: '2026-04-14T07:19:04.000Z_53',
+        required: true,
+    })
+    @IsNumber()
+    tempId: number;
 }

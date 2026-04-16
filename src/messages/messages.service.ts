@@ -52,9 +52,11 @@ export class MessagesService {
 
         const result = await this.findOne(savedMessage.id, userId);
 
-        this.eventBus.emit({ type: 'message.sent', payload: { message: result, conversationId } });
+        const res = { ...result, tempId: dto.tempId };
 
-        return result;
+        this.eventBus.emit({ type: 'message.sent', payload: { message: res, conversationId } });
+
+        return res;
     }
 
     async getMessages(conversationId: number, userId: number, cursor?: string, limit: number = 20): Promise<MessagesCursorPaginationResponseDto> {
